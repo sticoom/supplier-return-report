@@ -7,7 +7,7 @@
    再做「人工抽查 3 个供应商」的自动化等价：
      抽查1（甲）：结算清单「当月检验合格率」与验货 xlsx 原始单元格独立重算一致；
      抽查2（甲/乙/丙）：每条有价 SKU 行 件数×单价=金额，件数与 FBA/FBM 订单独立重算一致；
-     抽查3（乙/丙）：二供拆分行 note=「按比例分摊」、小数件数、两行件数之和守恒。
+     抽查3（乙/丙）：交货拆分行 note=「按交货比例分摊」、小数件数、两行件数之和守恒。
 
 2. 真实数据 E2E（marker=integration）：读 D:/Downloads 7 月真实文件 + 本地参考数据，
    合格率与验货文件独立重算交叉校验。默认被 pyproject addopts 的
@@ -208,11 +208,11 @@ def test_sample_2_sku_qty_times_price_equals_amount(cli_run):
 
 
 def test_sample_3_second_supplier_split_rows(cli_run):
-    """抽查供应商③（乙/丙，二供拆分）：note=按比例分摊、小数件数、两行件数守恒、各自单价。"""
+    """抽查供应商③（乙/丙，交货拆分）：note=按交货比例分摊、小数件数、两行件数守恒、各自单价。"""
     wb = openpyxl.load_workbook(cli_run.report)
     yi = _sku_rows(_supplier_sheet(wb, YI))[0]
     bing = _sku_rows(_supplier_sheet(wb, BING))[0]
-    assert yi["note"] == bing["note"] == "按比例分摊"
+    assert yi["note"] == bing["note"] == "按交货比例分摊"
     assert yi["qty_qu"] == 0.5 and bing["qty_qu"] == 0.5     # 比例分摊 → 小数件数保留
     assert abs((yi["qty_qu"] + bing["qty_qu"]) - 1.0) < 1e-9  # 拆分守恒 = 订单原始 1 件
     assert yi["price"] == 30.0 and bing["price"] == 40.0      # 二供各自取各自的价

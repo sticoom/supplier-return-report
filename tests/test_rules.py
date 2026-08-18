@@ -108,10 +108,12 @@ def test_latest_price_latest_on_or_before_month_end():
     assert rules.latest_price(rows, "S1", "甲", "2026-05") is None
 
 
-def test_second_supplier_ratio_12month_window():
-    rows = [_inb("2026-06-01", "乙", "S2", 20, 1.0), _inb("2026-06-01", "丙", "S2", 20, 1.0)]
-    assert rules.second_supplier_ratio(rows, "S2", "乙", "丙", "2026-07") == 0.5
-    assert rules.second_supplier_ratio(rows, "S2", "乙", "丙", "2026-05") is None  # 窗口内无入库
+def test_delivery_shares_by_receipt_qty():
+    rows = [_inb("2026-06-01", "乙", "S2", 30, 1.0), _inb("2026-06-01", "丙", "S2", 10, 1.0),
+            _inb("2026-08-01", "丁", "S2", 60, 1.0)]   # 8月入库不计入 7 月报告
+    assert rules.delivery_shares(rows, "S2", "2026-07") == {"乙": 0.75, "丙": 0.25}
+    assert rules.delivery_shares(rows, "S2", "2026-05") == {}   # 无交货数据
+    assert rules.delivery_shares(rows, "S9", "2026-07") == {}
 
 
 def test_quality_return_rate_zero_sales_is_none():
@@ -132,9 +134,6 @@ def test_quarter_helpers():
     assert rules.month_end("2026-02") == "2026-02-28"
     assert rules.quarter_of("2026-07") == "2026-Q3"
     assert rules.quarter_months("2026-Q1") == ["2026-01", "2026-02", "2026-03"]
-    assert rules.last_12_months("2026-07")[0] == "2025-08"
-    assert rules.last_12_months("2026-07")[-1] == "2026-07"
-    assert len(rules.last_12_months("2026-07")) == 12
 
 
 def test_batch_matrix_supplier_by_month_counts():

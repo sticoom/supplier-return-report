@@ -115,12 +115,6 @@ def month_end(report_month: str) -> str:
     return f"{y:04d}-{m:02d}-{calendar.monthrange(y, m)[1]:02d}"
 
 
-def last_12_months(report_month: str) -> list[str]:
-    y, m = map(int, report_month.split("-"))
-    idx = y * 12 + (m - 1)
-    return [f"{i // 12:04d}-{i % 12 + 1:02d}" for i in range(idx - 11, idx + 1)]
-
-
 def quarter_of(month: str) -> str:
     y, m = month.split("-")
     return f"{y}-Q{(int(m) - 1) // 3 + 1}"
@@ -145,19 +139,20 @@ def latest_price(inbounds: list[InboundRow], sku: str, supplier: str,
     return best
 
 
-def second_supplier_ratio(inbounds, sku: str, primary: str, secondary: str,
-                          report_month: str) -> float | None:
-    months = set(last_12_months(report_month))   # 近12个月（含报告月）
-    q1 = q2 = 0.0
+def delivery_shares(inbounds, sku: str, report_month: str) -> dict[str, float]:
+    """SKU 各供应商交货数量占比（上传采购入库单中入库日期≤报告月月末的全部交货数据）。
+
+    不区分一供/二供：谁交过货谁按占比分担该 SKU 的质量退货费用。无交货返回 {}。
+    """
+    cutoff = month_end(report_month)
+    qty: dict[str, float] = {}
     for r in inbounds:
-        if r.sku == sku and r.date[:7] in months:
-            if r.supplier == primary:
-                q1 += r.qty
-            elif r.supplier == secondary:
-                q2 += r.qty
-    if q1 + q2 <= 0:
-        return None                           # 无入库支撑 → 100%归一供+人工复核
-    return q2 / (q1 + q2)
+        if r.sku == sku and r.date and r.date <= cutoff:
+            qty[r.supplier] = qty.get(r.supplier, 0.0) + r.qty
+    total = sum(qty.values())
+    if total <= 0:
+        return {}
+    return {s: v / total for s, v in sorted(qty.items(), key=lambda kv: -kv[1]) if v > 0}
 
 
 def quality_return_rate(quality_qty: float, sales_qty: float) -> float | None:

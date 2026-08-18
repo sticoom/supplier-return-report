@@ -95,7 +95,7 @@ def test_run_month_report_data_contents(tmp_path):
     assert jia_lines[0].rate == 0.04 and jia_lines[0].amount == 280.0
     yi_line = [s for s in data.low200 if s.supplier == YI][0].skus[0]
     assert yi_line.qty_quality_unacceptable == 0.5 and yi_line.amount == 15.0
-    assert yi_line.note == "按比例分摊"
+    assert yi_line.note == "按交货比例分摊"
     # 复核清单
     assert {r.order_id for r in data.review} == {"A1", "A4"}
     # 校验种类

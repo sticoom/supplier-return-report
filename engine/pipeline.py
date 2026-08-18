@@ -107,26 +107,23 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                                              f"{sku} 质量退货 {total_q} 件，DLM 表无此 SKU，未计入"))
             continue
         rate = rules.quality_return_rate(total_q, agg.sales_qty)
-        price1 = rules.latest_price(inbound_rows, sku, agg.default_supplier, report_month)
-        if not agg.other_supplier:
-            plan = [(agg.default_supplier, q, price1, "")]
+        shares = rules.delivery_shares(inbound_rows, sku, report_month)
+        if shares:               # 规则13：按交货数量占比分摊给所有交过货的供应商
+            multi = len(shares) > 1
+            plan = [(sup, {k: v * share for k, v in q.items()},
+                     rules.latest_price(inbound_rows, sku, sup, report_month),
+                     "按交货比例分摊" if multi else "") for sup, share in shares.items()]
+        elif agg.default_supplier:   # 规则14：无交货数据 → 归默认供应商 + 人工复核
+            plan = [(agg.default_supplier, q,
+                     rules.latest_price(inbound_rows, sku, agg.default_supplier, report_month),
+                     "无交货数据，按默认供应商归集，需人工复核")]
+            validation.append(ValidationItem(
+                "无交货数据",
+                f"{sku} 无入库记录，质量退货 {total_q} 件按默认供应商 {agg.default_supplier} 归集"))
         else:
-            ratio = rules.second_supplier_ratio(inbound_rows, sku, agg.default_supplier,
-                                                agg.other_supplier, report_month)
-            if ratio is None:      # 规则14：无入库支撑 → 100% 归一供 + 人工复核
-                plan = [(agg.default_supplier, q, price1, "二供比例未知，需人工复核")]
-                validation.append(ValidationItem(
-                    "二供比例未知",
-                    f"{sku} 一供 {agg.default_supplier} / 二供 {agg.other_supplier} 近12月无入库"))
-            else:                  # 规则13/15：按比例拆两行，小数保留
-                plan = [
-                    (agg.default_supplier,
-                     {k: v * (1 - ratio) for k, v in q.items()}, price1, "按比例分摊"),
-                    (agg.other_supplier,
-                     {k: v * ratio for k, v in q.items()},
-                     rules.latest_price(inbound_rows, sku, agg.other_supplier, report_month),
-                     "按比例分摊"),
-                ]
+            plan = [("", q, None, "无交货数据且无默认供应商，需人工复核")]
+            validation.append(ValidationItem(
+                "无交货数据", f"{sku} 无入库记录且 DLM 无默认供应商，质量退货 {total_q} 件未归属"))
         for sup, qq, price, note in plan:
             amount = rules.round2(sum(qq.values()) * price) if price is not None else None
             if price is None:      # 规则12：缺价 → 金额留空、不计应扣、数量照常展示
