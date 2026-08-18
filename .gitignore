@@ -1,0 +1,8 @@
+data/
+analysis/
+dev-pipeline/
+__pycache__/
+*.pyc
+.venv/
+*.xlsx
+*.xls
