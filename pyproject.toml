@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: reads real local files"]
+# 真实数据集成测试默认跳过（避免普通回归触碰 123MB 验货报表）；显式 `pytest -m integration` 才跑
+addopts = "-m \"not integration\""
