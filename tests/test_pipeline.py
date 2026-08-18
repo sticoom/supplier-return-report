@@ -148,3 +148,29 @@ def test_cli_golden_end_to_end(tmp_path, capsys):
     store = pipeline.Store(db)
     assert len(store.month_suppliers("2026-07")) == 3
     assert len(store.load_reference().inspections) == 35   # CLI 已把参考库存进 db
+
+
+def test_unmapped_supplier_labeled_not_blank(tmp_path):
+    """DLM 无默认供应商但存在质量退货 → 汇总行显示（未匹配供应商）并出校验项，不出现空名行。"""
+    fba, fbm, dlm, inbound = _golden_inputs(tmp_path)
+    # FBA 的 A5 行是 SKU003(DEFECTIVE) —— DLM 中无 SKU003；再造一行有 DLM 行但无供应商的 SKU004
+    fba2 = make_fba_file(tmp_path / "fba2.xlsx", [
+        ("A1", "SKU001", 2, "DEFECTIVE(存在瑕疵)", "2026-07-05", "破了"),
+        ("A6", "SKU004", 1, "DEFECTIVE(存在瑕疵)", "2026-07-06", ""),
+    ])
+    dlm2 = make_dlm_file(tmp_path / "dlm2.xlsx", [
+        ("SKU001", JIA, "", 100, 10),
+        ("SKU004", "", "", 40, 3),
+    ])
+    ref = _golden_reference(tmp_path)
+    store = pipeline.Store(str(tmp_path / "app2.db"))
+    summary = pipeline.run_month("2026-07", fba2, fbm, dlm2, inbound, ref,
+                                 str(tmp_path / "reports2"), store=store)
+    rows = {r["supplier"]: r for r in store.month_suppliers("2026-07")}
+    assert "" not in rows
+    assert "（未匹配供应商）" in rows
+    import openpyxl
+    wb = openpyxl.load_workbook(tmp_path / "reports2" / summary.file_name)
+    ws = wb["数据校验"]
+    kinds = {str(r[0].value) for r in ws.iter_rows(min_row=2) if r[0].value}
+    assert "供应商未匹配" in kinds

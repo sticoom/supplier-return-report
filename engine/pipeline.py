@@ -139,7 +139,11 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                 rate=rate, unit_price=price, amount=amount, note=note))
 
     results = []
-    for sup, lines in lines_by_supplier.items():
+    for sup_raw, lines in lines_by_supplier.items():
+        sup = sup_raw.strip() or "（未匹配供应商）"
+        if sup != sup_raw:
+            validation.append(ValidationItem(
+                "供应商未匹配", "存在质量退货 SKU 的 DLM 行无默认供应商，无法归组计费，需人工补充供应商映射"))
         deduction = rules.round2(sum(l.amount for l in lines if l.amount is not None))
         label = rules.agreement_label(ref.agreements, sup)
         if label == "未匹配协议":
