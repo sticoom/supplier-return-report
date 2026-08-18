@@ -26,14 +26,14 @@ def detect_kind(filename: str) -> str | None:
         return "fba"
     if "dlm" in lower:
         return "dlm"
-    if "入库" in filename:
+    if "入库" in filename or "inbound" in lower:
         return "inbound"
     return None
 
 
 def detect_ref_kind(filename: str) -> str | None:
     """按文件名识别参考库文件：验货数据 / 协议签订记录。"""
-    if "验货" in filename:
+    if "验货" in filename or "inspection" in filename.lower():
         return "inspection"
     if "协议" in filename or "agreement" in filename.lower():
         return "agreements"
