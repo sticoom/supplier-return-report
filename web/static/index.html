@@ -158,7 +158,7 @@ $("btnUpload").addEventListener("click", async () => {
   monthFiles.forEach(f => fd.append("files", f, f.name));
   $("btnUpload").disabled = true; $("uploadState").textContent = "上传中…";
   try {
-    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const r = await fetch("api/upload", { method: "POST", body: fd });
     const body = await r.json();
     if (!r.ok) throw new Error(body.detail || r.statusText);
     $("uploadState").textContent = `已保存 ${body.saved.length} 个文件`;
@@ -174,14 +174,14 @@ $("btnRef").addEventListener("click", async () => {
   const fd = new FormData();
   files.forEach(f => fd.append("files", f, f.name));
   try {
-    const r = await fetch("/api/reference", { method: "POST", body: fd });
+    const r = await fetch("api/reference", { method: "POST", body: fd });
     const body = await r.json();
     if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : r.statusText);
     $("refState").textContent = `当前参考库：验货 ${body.inspections} 批，协议 ${body.agreements} 家`;
     toast("参考库已更新，立即生效");
   } catch (err) { toast("参考库更新失败：" + err.message, true); }
 });
-fetch("/api/reference").then(r => r.json()).then(b => {
+fetch("api/reference").then(r => r.json()).then(b => {
   if (b.inspections || b.agreements)
     $("refState").textContent = `当前参考库：验货 ${b.inspections} 批，协议 ${b.agreements} 家`;
 });
@@ -192,7 +192,7 @@ $("btnGen").addEventListener("click", async () => {
   if (!month) return toast("请先选择报告月", true);
   $("btnGen").disabled = true; $("genState").textContent = "计算中，请稍候…"; $("summary").innerHTML = "";
   try {
-    const r = await fetch("/api/generate", {
+    const r = await fetch("api/generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month })
     });
@@ -206,7 +206,7 @@ $("btnGen").addEventListener("click", async () => {
                    ["缺价SKU", body.missing_price_count]];
     $("summary").innerHTML = items.map(([k, v]) => `<div class="stat"><b>${v}</b>${k}</div>`).join("");
     const link = $("dlLink");
-    link.href = `/api/download/${month}`; link.style.display = "inline";
+    link.href = `api/download/${month}`; link.style.display = "inline";
     link.download = body.file_name;
     $("genState").textContent = `已生成：${body.file_name}`;
     toast("报告生成成功");
@@ -217,12 +217,12 @@ $("btnGen").addEventListener("click", async () => {
 
 /* ---- 历史 ---- */
 async function loadHistory() {
-  const r = await fetch("/api/history");
+  const r = await fetch("api/history");
   const rows = await r.json();
   $("histTable").querySelector("tbody").innerHTML = rows.map(h =>
     `<tr><td><a class="dl" href="#" data-month="${h.month}">${h.month}</a></td>
      <td>${h.supplier_count}</td><td>${h.low200_count}</td>
-     <td><a class="dl" href="/api/download/${h.month}">下载</a></td></tr>`).join("")
+     <td><a class="dl" href="api/download/${h.month}">下载</a></td></tr>`).join("")
     || `<tr><td colspan="4" class="muted">暂无历史记录</td></tr>`;
 }
 $("btnHist").addEventListener("click", loadHistory);
@@ -230,7 +230,7 @@ $("histTable").addEventListener("click", async e => {
   const a = e.target.closest("a[data-month]");
   if (!a) return;
   e.preventDefault();
-  const r = await fetch(`/api/history/${a.dataset.month}`);
+  const r = await fetch(`api/history/${a.dataset.month}`);
   const rows = await r.json();
   const tb = $("histDetail").querySelector("tbody");
   tb.innerHTML = rows.map(s =>
@@ -244,7 +244,7 @@ $("histTable").addEventListener("click", async e => {
 $("btnQuarter").addEventListener("click", async () => {
   const month = pickMonth();
   if (!month) return toast("请先选择报告月", true);
-  const r = await fetch(`/api/quarter/${month}`);
+  const r = await fetch(`api/quarter/${month}`);
   if (!r.ok) return toast("查询失败", true);
   const rows = await r.json();
   const tb = $("qTable").querySelector("tbody");
