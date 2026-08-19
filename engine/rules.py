@@ -63,9 +63,9 @@ def batch_pass_rate(batches: list[InspectionBatch], supplier: str, month: str) -
     total = ok = 0
     for b in batches:
         if b.supplier.strip() == s and b.month == month:
-            total += 1
+            total += b.count
             if b.result.strip() == "合格":
-                ok += 1
+                ok += b.count
     return ok / total if total else None
 
 
@@ -77,8 +77,45 @@ def batch_matrix(batches: list[InspectionBatch]) -> dict[str, dict[str, tuple[in
     for b in batches:
         cells = out.setdefault(b.supplier.strip(), {})
         total, failed = cells.get(b.month, (0, 0))
-        cells[b.month] = (total + 1, failed + (0 if b.result.strip() == "合格" else 1))
+        cells[b.month] = (total + b.count,
+                          failed + (0 if b.result.strip() == "合格" else b.count))
     return out
+
+
+def resolve_supplier_aliases(batches: list[InspectionBatch], full_names, prefer_sets) -> tuple:
+    """汇总页的供应商是简称（如 云晴/蓓圣美）→ 映射为全名。
+
+    prefer_sets：按业务优先级排列的候选全名集合列表（如 [入库供应商, DLM供应商, 协议表]），
+    逐层找「包含简称的唯一全名」——先用最窄的层消歧（同名并存时，真正在交货的
+    主体优先，如 东莞市云晴云佑电子 vs 已被替换的 深圳市云晴云佑科技）。
+    全部层级都无唯一匹配 → 未解决。返回 (新列表, 未解决简称列表)。
+    """
+    fulls = [f.strip() for f in set(list(full_names) + [x for ps in prefer_sets for x in ps])
+             if f and f.strip()]
+    tiers = [[f.strip() for f in set(ps) if f and f.strip()] for ps in prefer_sets]
+    resolved, pending = {}, []
+    out = []
+    for b in batches:
+        s = b.supplier.strip()
+        if s in fulls:
+            out.append(b)
+            continue
+        if s not in resolved and s not in pending:
+            hit = ""
+            for tier in tiers:
+                cands = [f for f in tier if s in f]
+                if len(cands) == 1:
+                    hit = cands[0]
+                    break
+            if hit:
+                resolved[s] = hit
+            else:
+                pending.append(s)
+        if s in resolved:
+            out.append(InspectionBatch(resolved[s], b.month, b.result, b.count))
+        else:
+            out.append(b)
+    return out, pending
 
 
 def lookup_agreement(agreements, supplier: str) -> AgreementInfo | None:

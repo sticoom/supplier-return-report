@@ -130,7 +130,11 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const monthInput = $("month");
-monthInput.value = new Date().toISOString().slice(0, 7);
+monthInput.value = (() => {          // 默认上个月（月度报告统计的是上个自然月）
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);      // 1月自动回退到上一年12月
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+})();
 let monthFiles = [];   // 已废弃：改为 6 个独立文件位
 
 function toast(text, err) {
@@ -198,12 +202,38 @@ fetch("api/reference").then(r => r.json()).then(b => {
       "⚠️ 参考库为空：请先上传《2026年验货数据报表》和《供应商框架合同、质量协议及廉洁协议签订记录表》，否则无法生成报告";
 });
 
-/* ---- 生成报告 ---- */
+/* ---- 生成报告（自动先上传已选的文件，不用单独点上传） ---- */
+async function autoUploadSelected(month) {
+  const monthSel = SLOTS.slice(0, 4).map(([k]) => picked(k)).filter(Boolean);
+  const refSel = SLOTS.slice(4).map(([k]) => picked(k)).filter(Boolean);
+  if (monthSel.length) {
+    $("genState").textContent = "正在上传每月数据文件…";
+    const fd = new FormData();
+    fd.append("month", month);
+    monthSel.forEach(f => fd.append("files", f, f.name));
+    const r = await fetch("api/upload", { method: "POST", body: fd });
+    const body = await r.json();
+    if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : "月度文件上传失败");
+    $("uploadState").textContent = `已保存 ${body.saved.length} 个文件`;
+  }
+  if (refSel.length) {
+    $("genState").textContent = "正在上传参考数据文件…";
+    const fd = new FormData();
+    refSel.forEach(f => fd.append("files", f, f.name));
+    const r = await fetch("api/reference", { method: "POST", body: fd });
+    const body = await r.json();
+    if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : "参考数据上传失败");
+    $("refState").textContent = `当前参考库：验货 ${body.inspections} 批，协议 ${body.agreements} 家`;
+  }
+}
+
 $("btnGen").addEventListener("click", async () => {
   const month = pickMonth();
   if (!month) return toast("请先选择报告月", true);
-  $("btnGen").disabled = true; $("genState").textContent = "计算中，请稍候…"; $("summary").innerHTML = "";
+  $("btnGen").disabled = true; $("summary").innerHTML = "";
   try {
+    await autoUploadSelected(month);
+    $("genState").textContent = "计算中，请稍候…";
     const r = await fetch("api/generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month })

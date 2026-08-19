@@ -109,27 +109,117 @@ def load_inbound(path) -> list[InboundRow]:
 
 
 def load_inspection(path, sheet_name: str = "26年验货原始数据") -> list[InspectionBatch]:
+    """验货数据两种格式都支持：
+    ① 原始明细页「26年验货原始数据」（供应商全名 + 月份 + 质检结果，每行 1 批）
+    ② 「供应商」汇总页（表头含 供应商名称/统计项，行为 总批数/不合格批数/批次合格率，
+       列为 1月..12月，供应商为简称）——来自 wiki 文件《2026年验货数据报表》的供应商 sheet。
+    """
     out = []
-    for rec in _rows(path, sheet=sheet_name):
-        sup, month = _norm(rec.get("供应商")), _norm_month(rec.get("月份"))
-        if not sup or not month:
+    try:
+        for rec in _rows(path, sheet=sheet_name):
+            sup, month = _norm(rec.get("供应商")), _norm_month(rec.get("月份"))
+            if not sup or not month:
+                continue
+            out.append(InspectionBatch(supplier=sup, month=month,
+                                       result=_norm(rec.get("质检结果"))))
+    except ValueError:                    # 指定 sheet 不存在 → 尝试汇总页
+        out = []
+    return out or _load_inspection_summary(path)
+
+
+def _load_inspection_summary(path) -> list[InspectionBatch]:
+    """解析「供应商」汇总页：总批数/不合格批数 × 月列 → 合成带 count 的批次记录。"""
+    import re as _re
+    xls = pd.ExcelFile(path)
+    for sn in xls.sheet_names:
+        df = pd.read_excel(path, sheet_name=sn, header=None, dtype=object)
+        if df.empty:
             continue
-        out.append(InspectionBatch(supplier=sup, month=month, result=_norm(rec.get("质检结果"))))
-    return out
+        hdr_i = hdr = None
+        for i in range(min(10, len(df))):
+            vals = [str(v).strip() for v in df.iloc[i].tolist()]
+            if "供应商名称" in vals and "统计项" in vals:
+                hdr_i, hdr = i, vals
+                break
+        if hdr_i is None:
+            continue
+        year = datetime.now().year
+        for i in range(hdr_i):            # 标题行里找年份，如「2026年供应商批次合格率统计表」
+            m = _re.match(r"(\d{4})年", str(df.iloc[i, 0]).strip())
+            if m:
+                year = int(m.group(1))
+                break
+        month_cols = {}
+        for j, v in enumerate(hdr):
+            mm = _re.fullmatch(r"(\d{1,2})月", v)
+            if mm:
+                month_cols[j] = f"{year:04d}-{int(mm.group(1)):02d}"
+        name_col, item_col = hdr.index("供应商名称"), hdr.index("统计项")
+        out: list[InspectionBatch] = []
+        cur_sup, pending = "", {}
+
+        def _flush():
+            for mon, (tot, fail) in pending.items():
+                fail = int(fail or 0)
+                ok = max(int(tot or 0) - fail, 0)
+                if ok:
+                    out.append(InspectionBatch(cur_sup, mon, "合格", ok))
+                if fail:
+                    out.append(InspectionBatch(cur_sup, mon, "不合格", fail))
+
+        for i in range(hdr_i + 1, len(df)):
+            sup = _norm(df.iloc[i, name_col])
+            if sup and sup != cur_sup:
+                _flush()
+                cur_sup, pending = sup, {}
+            if not cur_sup:
+                continue
+            item = _norm(df.iloc[i, item_col])
+            if item not in ("总批数", "不合格批数"):
+                continue
+            idx = 0 if item == "总批数" else 1
+            for j, mon in month_cols.items():
+                v = _num(df.iloc[i, j])
+                if v:
+                    pending.setdefault(mon, [0, 0])[idx] = int(v)
+        _flush()
+        if out:
+            return out
+    return []
 
 
 def load_agreements(path) -> list[AgreementInfo]:
     if str(path).lower().endswith(".csv"):
         return _load_agreements_csv(path)
-    out = []
-    for rec in _rows(path):
+    out: list[AgreementInfo] = []
+    # 表头不一定是第 1 行（wiki 导出版第 3 行才是 表序/代码/名称…）→ 扫描定位
+    for rec in _rows_with_header_scan(path, must_have=("供应商名称", "质量协议")):
         sup = _norm(rec.get("供应商名称"))
         if not sup:
             continue
+        # 版本列的表头是空的（紧跟「质量协议」列）→ 取值在 KNOWN_VERSIONS 里的那列
         version = _norm(rec.get("质量协议版本"))
+        if not version:
+            for k, v in rec.items():
+                if str(k).startswith("Unnamed:") and _norm(v) in KNOWN_VERSIONS:
+                    version = _norm(v)
+                    break
         out.append(AgreementInfo(sup, _norm(rec.get("质量协议")) == "是",
                                  version if version in KNOWN_VERSIONS else ""))
     return out
+
+
+def _rows_with_header_scan(path, must_have, sheet=0, max_scan=10) -> list[dict]:
+    df = pd.read_excel(path, sheet_name=sheet, header=None, dtype=object)
+    for i in range(min(max_scan, len(df))):
+        vals = [str(v).strip() for v in df.iloc[i].tolist()]
+        if all(m in vals for m in must_have):
+            hdr = [v if v and v != "nan" else f"Unnamed:{j}"
+                   for j, v in enumerate(vals)]
+            df2 = df.iloc[i + 1:].copy()
+            df2.columns = hdr
+            return df2.to_dict("records")
+    return []
 
 
 def _load_agreements_csv(path) -> list[AgreementInfo]:

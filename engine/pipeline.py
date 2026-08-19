@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS month_supplier (
   pass_rate REAL, agreement TEXT NOT NULL, coefficient REAL NOT NULL,
   undertaken INTEGER NOT NULL, under_200 INTEGER NOT NULL,
   PRIMARY KEY (report_month, supplier));
-CREATE TABLE IF NOT EXISTS reference_inspection (supplier TEXT, month TEXT, result TEXT);
+CREATE TABLE IF NOT EXISTS reference_inspection (supplier TEXT, month TEXT, result TEXT, count INTEGER DEFAULT 1);
 CREATE TABLE IF NOT EXISTS reference_agreement (supplier TEXT PRIMARY KEY, signed INTEGER, version TEXT);
 CREATE TABLE IF NOT EXISTS upload_log (report_month TEXT, kind TEXT, filename TEXT, uploaded_at TEXT);
 """
@@ -68,17 +68,19 @@ class Store:
 
     def save_reference(self, ref: ReferenceData) -> None:
         with sqlite3.connect(self.db_path) as con:
+            _ensure_count_column(con)
             con.execute("DELETE FROM reference_inspection")
             con.execute("DELETE FROM reference_agreement")
-            con.executemany("INSERT INTO reference_inspection VALUES (?,?,?)",
-                            [(b.supplier, b.month, b.result) for b in ref.inspections])
+            con.executemany("INSERT INTO reference_inspection VALUES (?,?,?,?)",
+                            [(b.supplier, b.month, b.result, b.count) for b in ref.inspections])
             con.executemany("INSERT OR REPLACE INTO reference_agreement VALUES (?,?,?)",
                             [(a.supplier, int(a.signed), a.version) for a in ref.agreements])
 
     def load_reference(self) -> ReferenceData:
         with sqlite3.connect(self.db_path) as con:
-            insp = [InspectionBatch(r[0], r[1], r[2]) for r in
-                    con.execute("SELECT supplier, month, result FROM reference_inspection")]
+            _ensure_count_column(con)
+            insp = [InspectionBatch(r[0], r[1], r[2], int(r[3] or 1)) for r in
+                    con.execute("SELECT supplier, month, result, count FROM reference_inspection")]
             ags = [AgreementInfo(r[0], bool(r[1]), r[2]) for r in
                    con.execute("SELECT supplier, signed, version FROM reference_agreement")]
         return ReferenceData(insp, ags)
@@ -89,12 +91,35 @@ class Store:
                         (report_month, kind, filename, datetime.now().isoformat()))
 
 
+def _ensure_count_column(con) -> None:
+    """旧库 reference_inspection 没有 count 列（汇总页导入前建的）→ 补列，默认 1。"""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(reference_inspection)")}
+    if cols and "count" not in cols:
+        con.execute("ALTER TABLE reference_inspection ADD COLUMN count INTEGER DEFAULT 1")
+
+
 def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                       ref: ReferenceData) -> ReportData:
     pivot = rules.pivot_quality(fba_rows, fbm_rows)
     dlm_agg = rules.aggregate_dlm(dlm_rows)
     validation: list[ValidationItem] = []
     lines_by_supplier: dict[str, list[SkuLine]] = {}
+
+    # 验货汇总页的供应商是简称（云晴/蓓圣美…）→ 唯一包含匹配映射为全名
+    # DLM「其他供应商」可能是分号拼接的多个供应商 → 拆开后再进候选池
+    dlm_suppliers = {p.strip() for a in dlm_agg.values()
+                     for s in (a.default_supplier, a.other_supplier) if s
+                     for p in str(s).split(";") if p.strip()}
+    inbound_suppliers = {r.supplier.strip() for r in inbound_rows if r.supplier.strip()}
+    full_names = ({a.supplier for a in ref.agreements} | dlm_suppliers | inbound_suppliers)
+    batches, unresolved = rules.resolve_supplier_aliases(
+        ref.inspections, full_names,
+        [inbound_suppliers, dlm_suppliers, {a.supplier for a in ref.agreements}])
+    if unresolved:
+        validation.append(ValidationItem(
+            "验货简称未匹配",
+            "验货数据中这些供应商简称无法唯一映射为全名：" + "、".join(sorted(set(unresolved)))))
+    ref = ReferenceData(batches, ref.agreements)
 
     for sku in sorted(pivot):
         q = pivot[sku]

@@ -48,6 +48,7 @@ class InspectionBatch:
     supplier: str      # strip 后全名
     month: str         # 'YYYY-MM'
     result: str        # '合格' / '不合格'
+    count: int = 1     # 批数（汇总页导入时>1，原始明细恒为1）
 
 
 @dataclass(frozen=True)
