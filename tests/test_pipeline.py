@@ -72,8 +72,8 @@ def test_run_month_golden_numbers(tmp_path):
 
     rows = {(r["supplier"]): r for r in store.month_suppliers("2026-07")}
     jia = rows[JIA]
-    assert jia["deduction"] == 280.0 and jia["coefficient"] == 0.2
-    assert jia["undertaken"] == 56 and jia["under_200"] == 0
+    assert jia["deduction"] == 240.0 and jia["coefficient"] == 0.2
+    assert jia["undertaken"] == 48 and jia["under_200"] == 0
     yi = rows[YI]
     assert yi["deduction"] == 15.0 and yi["undertaken"] == 15 and yi["under_200"] == 1
     bing = rows[BING]
@@ -92,7 +92,7 @@ def test_run_month_report_data_contents(tmp_path):
     jia_lines = data.suppliers[0].skus
     assert jia_lines[0].sku == "SKU001"
     assert (jia_lines[0].qty_defective, jia_lines[0].qty_missing_parts) == (3.0, 1.0)
-    assert jia_lines[0].rate == 0.04 and jia_lines[0].amount == 280.0
+    assert jia_lines[0].rate == 0.04 and jia_lines[0].amount == 240.0
     yi_line = [s for s in data.low200 if s.supplier == YI][0].skus[0]
     assert yi_line.qty_quality_unacceptable == 0.5 and yi_line.amount == 15.0
     assert yi_line.note == "按交货比例分摊"

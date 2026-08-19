@@ -93,3 +93,9 @@ def make_agreements_csv(path, data_rows):
 def make_agreements_xlsx(path, data_rows):
     """data_rows: (供应商名称, 质量协议, 质量协议版本)"""
     return _save(path, [["供应商名称", "质量协议", "质量协议版本"]] + [list(r) for r in data_rows])
+
+
+def make_inbound_file_with_tax(path, data_rows):
+    """data_rows: (入库日期, 供应商, 物料编码, 实收数量, 单价, 含税单价)"""
+    cols = ("入库日期", "供应商", "物料编码", "实收数量", "单价", "含税单价")
+    return _save(path, [INBOUND_HEADER] + [_patch(INBOUND_HEADER, cols, r) for r in data_rows])

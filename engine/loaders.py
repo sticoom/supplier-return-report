@@ -103,8 +103,12 @@ def load_inbound(path) -> list[InboundRow]:
         sku, supplier, d = _norm(rec.get("物料编码")), _norm(rec.get("供应商")), _iso_date(rec.get("入库日期"))
         if not (sku and supplier and d):
             continue
+        # 单价口径=含税单价（人工结果实证：不含税×1.13=人工表单价）；无含税列时回退「单价」
+        price = _num(rec.get("含税单价"))
+        if price is None or price == 0:
+            price = _num(rec.get("单价"))
         rows.append(InboundRow(date=d, supplier=supplier, sku=sku,
-                               qty=_num(rec.get("实收数量")), unit_price=_num(rec.get("单价"))))
+                               qty=_num(rec.get("实收数量")), unit_price=price))
     return rows
 
 

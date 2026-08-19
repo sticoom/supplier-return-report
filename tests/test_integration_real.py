@@ -203,8 +203,8 @@ def test_sample_2_sku_qty_times_price_equals_amount(cli_run):
                                    "SKU001")
     assert (row["qty_def"], row["qty_mp"], row["qty_qu"]) == (
         recount["DEFECTIVE"], recount["MISSING_PARTS"], recount["QUALITY_UNACCEPTABLE"])
-    assert row["price"] == 70.0                    # 月末前最近一次入库价（07-10，非 08-02 的 99）
-    assert abs(row["amount"] - 4 * 70.0) < 1e-9
+    assert row["price"] == 60.0                    # 首次入库价（06-01 的 60，非 07-10 的 70 / 08-02 的 99）
+    assert abs(row["amount"] - 4 * 60.0) < 1e-9
 
 
 def test_sample_3_second_supplier_split_rows(cli_run):

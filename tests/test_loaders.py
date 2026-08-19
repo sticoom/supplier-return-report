@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fixtures_build import (make_agreements_csv, make_agreements_xlsx, make_dlm_file,
+from fixtures_build import (make_agreements_csv, make_agreements_xlsx, make_dlm_file, make_inbound_file_with_tax,
                             make_fba_file, make_fbm_file, make_inbound_file,
                             make_inspection_file)
 
@@ -91,3 +91,11 @@ def test_load_agreements_xlsx_variant(tmp_path):
     p = make_agreements_xlsx(tmp_path / "agree.xlsx", [("甲公司", "是", "V4版")])
     rows = loaders.load_agreements(p)
     assert rows[0].version == "V4版"
+
+
+def test_load_inbound_prefers_tax_included_price(tmp_path):
+    """单价口径=含税单价：同一条记录 含税单价 优先于 不含税「单价」列。"""
+    f = make_inbound_file_with_tax(tmp_path / "inb.xlsx", [
+        ("2026-06-01", "甲", "S1", 10, 19.87, 22.45)])
+    rows = loaders.load_inbound(f)
+    assert rows[0].unit_price == 22.45

@@ -136,11 +136,11 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
         if shares:               # 规则13：按交货数量占比分摊给所有交过货的供应商
             multi = len(shares) > 1
             plan = [(sup, {k: v * share for k, v in q.items()},
-                     rules.latest_price(inbound_rows, sku, sup, report_month),
+                     rules.first_price(inbound_rows, sku, sup, report_month),
                      "按交货比例分摊" if multi else "") for sup, share in shares.items()]
         elif agg.default_supplier:   # 规则14：无交货数据 → 归默认供应商 + 人工复核
             plan = [(agg.default_supplier, q,
-                     rules.latest_price(inbound_rows, sku, agg.default_supplier, report_month),
+                     rules.first_price(inbound_rows, sku, agg.default_supplier, report_month),
                      "无交货数据，按默认供应商归集，需人工复核")]
             validation.append(ValidationItem(
                 "无交货数据",
