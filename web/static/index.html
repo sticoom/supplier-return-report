@@ -39,8 +39,13 @@
          padding:8px 20px; border-radius:8px; background:#24303d; color:#fff; opacity:0; transition:opacity .25s; }
   #msg.err { background:#c0392b; } #msg.show { opacity:.95; }
   a.dl { color:var(--brand); }
-  .guide { margin:8px 0; }
-  .guide td, .guide th { text-align:left; }
+  .slot { display:flex; align-items:center; gap:10px; padding:9px 0;
+          border-bottom:1px dashed var(--line); }
+  .slot-name { flex:0 0 46%; font-weight:600; }
+  .pick { background:var(--brand); color:#fff; border-radius:6px; padding:6px 16px;
+          cursor:pointer; white-space:nowrap; }
+  .pick:hover { background:#2d5fa8; }
+  .picked { color:#2c7a3f; font-size:13px; word-break:break-all; }
 </style>
 </head>
 <body>
@@ -58,27 +63,33 @@
 
 <section>
   <h2>2. 上传每月数据文件（4 个，必传）</h2>
-  <table class="guide"><thead><tr><th>文件（完整名称）</th><th>下载路径</th></tr></thead><tbody>
-    <tr><td>《退货(FBA)订单导出》.xlsx</td><td>领星 → 统计 → 退货分析 → 退货订单 → 先下载 FBA 退货订单</td></tr>
-    <tr><td>《退货(FBM)订单导出》.xlsx</td><td>同上 → 再下载 FBM 退货订单</td></tr>
-    <tr><td>《DLM退货统计SKU导出》.xlsx</td><td>图南BI → 品质 → 退货统计 → 选择上月的日期区间 → 导出</td></tr>
-    <tr><td>《采购入库单》.xlsx</td><td>图南 → 库存中心 → 采购入库单（日期范围拉够：2026-01-01 至报告月末）</td></tr>
-  </tbody></table>
-  <div class="drop" id="drop">把上面 4 个月度文件拖到这里，或
-    <label><input type="file" id="monthFiles" multiple accept=".xlsx">点此选择</label></div>
-  <ul class="files" id="monthList"></ul>
-  <button id="btnUpload">上传每月数据文件</button>
-  <span class="muted" id="uploadState"></span>
+  <div class="slot"><span class="slot-name">《退货(FBA)订单导出》.xlsx</span>
+    <label class="pick">选择文件<input type="file" id="fileFBA" accept=".xlsx" hidden></label>
+    <span class="picked" id="nameFBA"></span></div>
+  <div class="slot"><span class="slot-name">《退货(FBM)订单导出》.xlsx</span>
+    <label class="pick">选择文件<input type="file" id="fileFBM" accept=".xlsx" hidden></label>
+    <span class="picked" id="nameFBM"></span></div>
+  <div class="slot"><span class="slot-name">《DLM退货统计SKU导出》.xlsx</span>
+    <label class="pick">选择文件<input type="file" id="fileDLM" accept=".xlsx" hidden></label>
+    <span class="picked" id="nameDLM"></span></div>
+  <div class="slot"><span class="slot-name">《采购入库单》.xlsx <span class="muted">（日期范围：2026-01-01 至报告月末）</span></span>
+    <label class="pick">选择文件<input type="file" id="fileINB" accept=".xlsx" hidden></label>
+    <span class="picked" id="nameINB"></span></div>
+  <div class="row">
+    <button id="btnUpload">上传每月数据文件</button>
+    <span class="muted" id="uploadState"></span>
+  </div>
 </section>
 
 <section>
-  <h2>3. 上传参考数据文件（2 个，必传）</h2>
-  <table class="guide"><thead><tr><th>文件（完整名称）</th><th>来源</th></tr></thead><tbody>
-    <tr><td>《2026年验货数据报表》.xlsx</td><td>飞书知识库文件（须含「26年验货原始数据」sheet），验货数据有更新时重新上传</td></tr>
-    <tr><td>《供应商框架合同、质量协议及廉洁协议签订记录表》</td><td>飞书电子表格（导出 xlsx 或 csv），协议签订情况变化时重新上传</td></tr>
-  </tbody></table>
+  <h2>3. 上传参考数据文件（2 个，首次必传，更新后重传）</h2>
+  <div class="slot"><span class="slot-name">《2026年验货数据报表》.xlsx</span>
+    <label class="pick">选择文件<input type="file" id="fileINS" accept=".xlsx" hidden></label>
+    <span class="picked" id="nameINS"></span></div>
+  <div class="slot"><span class="slot-name">《供应商框架合同、质量协议及廉洁协议签订记录表》.xlsx</span>
+    <label class="pick">选择文件<input type="file" id="fileAGR" accept=".xlsx,.csv" hidden></label>
+    <span class="picked" id="nameAGR"></span></div>
   <div class="row">
-    <input type="file" id="refFiles" multiple accept=".xlsx,.csv">
     <button class="secondary" id="btnRef">上传参考数据</button>
   </div>
   <div class="muted" id="refState"></div>
@@ -120,73 +131,52 @@
 const $ = id => document.getElementById(id);
 const monthInput = $("month");
 monthInput.value = new Date().toISOString().slice(0, 7);
-let monthFiles = [];
+let monthFiles = [];   // 已废弃：改为 6 个独立文件位
 
 function toast(text, err) {
   const m = $("msg");
   m.textContent = text; m.className = "show" + (err ? " err" : "");
   setTimeout(() => m.className = "", err ? 4000 : 2500);
 }
-function detectKind(name) {           // 与后端 web/main.py detect_kind 保持一致
-  const lower = name.toLowerCase();
-  if (lower.includes("fbm")) return "退货(FBM)订单导出";
-  if (lower.includes("fba")) return "退货(FBA)订单导出";
-  if (lower.includes("dlm")) return "DLM退货统计SKU导出";
-  if (name.includes("入库")) return "采购入库单";
-  return null;
-}
-function detectRefKind(name) {
-  if (name.includes("验货")) return "验货数据";
-  if (name.includes("协议") || name.toLowerCase().includes("agreement")) return "协议记录";
-  return null;
-}
 function fmt(n) { return (n === null || n === undefined) ? "" : Number(n).toFixed(2).replace(/\.00$/, ""); }
 
-function renderMonthList() {
-  $("monthList").innerHTML = monthFiles.map(f => {
-    const k = detectKind(f.name);
-    return `<li>${k ? `<span class="tag">${k}</span>` : `<span class="tag bad">无法识别</span>`}${f.name}
-      <span class="muted">(${(f.size / 1024).toFixed(0)} KB)</span></li>`;
-  }).join("");
+/* ---- 6 个文件位：选择后显示文件名 ---- */
+const SLOTS = [["FBA","退货(FBA)订单导出"], ["FBM","退货(FBM)订单导出"],
+               ["DLM","DLM退货统计SKU导出"], ["INB","采购入库单"],
+               ["INS","2026年验货数据报表"], ["AGR","协议签订记录表"]];
+for (const [key] of SLOTS) {
+  $("file" + key).addEventListener("change", e => {
+    const f = e.target.files[0];
+    $("name" + key).textContent = f ? `${f.name}（${(f.size / 1024 / 1024).toFixed(1)} MB）` : "";
+  });
 }
+function picked(key) { return $("file" + key).files[0] || null; }
 function pickMonth() { return monthInput.value; }
 
-/* ---- 上传月度文件 ---- */
-const drop = $("drop");
-drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("on"); });
-drop.addEventListener("dragleave", () => drop.classList.remove("on"));
-drop.addEventListener("drop", e => {
-  e.preventDefault(); drop.classList.remove("on");
-  monthFiles = Array.from(e.dataTransfer.files); renderMonthList();
-});
-$("monthFiles").addEventListener("change", e => { monthFiles = Array.from(e.target.files); renderMonthList(); });
-
+/* ---- 上传每月数据文件（4 个必传） ---- */
 $("btnUpload").addEventListener("click", async () => {
   const month = pickMonth();
   if (!month) return toast("请先选择报告月", true);
-  if (!monthFiles.length) return toast("请先选择文件", true);
+  const lack = SLOTS.slice(0, 4).filter(([k]) => !picked(k)).map(([,n]) => `《${n}》`);
+  if (lack.length) return toast(`还有文件未选择：${lack.join("、")}`, true);
   const fd = new FormData();
   fd.append("month", month);
-  monthFiles.forEach(f => fd.append("files", f, f.name));
+  SLOTS.slice(0, 4).forEach(([k]) => { const f = picked(k); fd.append("files", f, f.name); });
   $("btnUpload").disabled = true; $("uploadState").textContent = "上传中…";
   try {
     const r = await fetch("api/upload", { method: "POST", body: fd });
     const body = await r.json();
     if (!r.ok) throw new Error(body.detail || r.statusText);
-    $("uploadState").textContent = `已保存 ${body.saved.length} 个文件`;
-    if (body.inspections !== undefined) {
-      $("refState").textContent =
-        `当前参考库：验货 ${body.inspections} 批，协议 ${body.agreements} 家`;
-    }
+    $("uploadState").textContent = `已保存 ${body.saved.length} 个文件，可点「生成报告」`;
     toast("每月数据文件上传成功");
   } catch (err) { toast("上传失败：" + err.message, true); }
   $("btnUpload").disabled = false;
 });
 
-/* ---- 参考库 ---- */
+/* ---- 上传参考数据（2 个，首次必传） ---- */
 $("btnRef").addEventListener("click", async () => {
-  const files = Array.from($("refFiles").files);
-  if (!files.length) return toast("请先选择参考数据文件（验货数据报表 / 协议签订记录表）", true);
+  const files = [picked("INS"), picked("AGR")].filter(Boolean);
+  if (!files.length) return toast("请先为《2026年验货数据报表》或《协议签订记录表》选择文件", true);
   const fd = new FormData();
   files.forEach(f => fd.append("files", f, f.name));
   try {
@@ -197,6 +187,8 @@ $("btnRef").addEventListener("click", async () => {
     toast("参考数据已更新，立即生效");
   } catch (err) { toast("参考数据上传失败：" + err.message, true); }
 });
+
+/* ---- 参考库状态（页面加载时显示） ---- */
 fetch("api/reference").then(r => r.json()).then(b => {
   if (b.inspections || b.agreements)
     $("refState").textContent =
