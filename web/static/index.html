@@ -250,7 +250,10 @@ $("btnGen").addEventListener("click", async () => {
     const link = $("dlLink");
     link.href = `api/download/${month}`; link.style.display = "inline";
     link.download = body.file_name;
-    $("genState").textContent = `已生成：${body.file_name}`;
+    $("genState").textContent = `已生成：${body.file_name}` +
+      (body.missing_price_count > 20
+        ? `　⚠️ 有 ${body.missing_price_count} 个 SKU 缺采购单价——请导出 2026-01-01 至报告月末的完整《采购入库单》重新上传后再生成`
+        : "");
     toast("报告生成成功");
     loadHistory();
   } catch (err) { toast("生成失败：" + err.message, true); $("genState").textContent = ""; }

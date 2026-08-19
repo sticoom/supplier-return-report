@@ -23,7 +23,7 @@ SUMMARY_HEADER = ["序号", "供应商", "应扣金额", "批次合格率", "是
 REASON_SUBS = ["DEFECTIVE \n(存在瑕疵)", "MISSING_PARTS\n (部分零件缺失)",
                "QUALITY_UNACCEPTABLE\n (质量未达到期望)"]
 NOTE_TEXT = ("备注：数据来源于领星系统，亚马逊后台数据；如对数据有疑问，请及时联系德拉姆品质部。"
-             "考核依据：依据《质量保证协议》相应版本条款。")
+             "考核依据：依据《质量保证协议》中质量退货金额条款。")
 SIGN_ROWS = [("采购部", "审核及优化意见简述："), ("品质部", "审核及优化意见简述："),
              ("供应链中心", "审核及优化意见简述："), ("总经理", "最终意见：")]
 
@@ -130,16 +130,17 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
     ws.cell(row=r_sum, column=10, value=f"=SUM(J5:J{last})").number_format = "0.00"
     r_coef = r_sum + 1
     ws.cell(row=r_coef, column=1, value="是否签署最新质量协议").font = BOLD
-    ws.cell(row=r_coef, column=5, value=s.agreement)
+    # 与手工版式一致：签了写「是」，没签/未匹配写「否」（版本信息在汇总表「是否签署质量协议(版本)」列）
+    ws.cell(row=r_coef, column=5, value="否" if s.agreement in ("否", "未匹配协议") else "是")
     ws.cell(row=r_coef, column=8, value="考核系数：").font = BOLD
-    ws.cell(row=r_coef, column=10, value=s.coefficient).number_format = "0.##"
+    ws.cell(row=r_coef, column=10, value=s.coefficient)
     r_pass = r_coef + 1
     ws.cell(row=r_pass, column=1, value="当月检验合格率：").font = BOLD
     c = ws.cell(row=r_pass, column=5, value="/" if s.pass_rate is None else s.pass_rate)
     if s.pass_rate is not None:
-        c.number_format = "0.0000%"
+        c.number_format = "0.00%"
     ws.cell(row=r_pass, column=8, value="考核金额：").font = BOLD
-    ws.cell(row=r_pass, column=10, value=f"=J{r_coef}*J{r_sum}").number_format = "0"
+    ws.cell(row=r_pass, column=10, value=f"=J{r_coef}*J{r_sum}").number_format = "0.00"
     ws.cell(row=r_pass + 1, column=1, value=NOTE_TEXT)
     for k, (dept, label) in enumerate(SIGN_ROWS):
         rr = r_pass + 3 + k

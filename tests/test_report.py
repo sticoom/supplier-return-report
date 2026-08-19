@@ -61,7 +61,7 @@ def test_supplier_sheet_layout_matches_manual_template(tmp_path):
     assert ws.cell(row=6, column=1).value == "统计金额："
     assert ws.cell(row=6, column=10).value == "=SUM(J5:J5)"
     assert ws.cell(row=7, column=1).value == "是否签署最新质量协议"
-    assert ws.cell(row=7, column=5).value == "V3版"
+    assert ws.cell(row=7, column=5).value == "是"   # 与手工版式一致（版本在汇总表）
     assert ws.cell(row=7, column=10).value == 0.2
     assert ws.cell(row=8, column=1).value == "当月检验合格率："
     assert abs(ws.cell(row=8, column=5).value - 0.9661) < 1e-9

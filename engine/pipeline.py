@@ -204,6 +204,15 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                             key=lambda r: (-r.deduction, r.supplier))
     data.low200 = sorted([r for r in results if r.under_200], key=lambda r: r.supplier)
     data.review = review
+    # 入库单覆盖不足 → 置顶醒目警告（常见原因：导出日期范围太窄，只覆盖了月末几天）
+    sku_total = sum(len(r.skus) for r in results)
+    miss = sum(1 for v in validation if v.kind == "缺单价")
+    if sku_total and miss / sku_total >= 0.3:
+        validation.insert(0, ValidationItem(
+            "入库单覆盖不足",
+            f"有报价 SKU 仅 {sku_total - miss}/{sku_total}（缺价 {miss} 个，占 {miss / sku_total:.0%}）。"
+            f"请到 图南→库存中心→采购入库单 导出 2026-01-01 至报告月末 的完整数据后重新上传，"
+            f"否则大量质量退货金额无法计算"))
     data.validation = validation
     data.batch_matrix = rules.batch_matrix(ref.inspections)   # 第 4 节「供应商批次合格率」sheet
     return data
