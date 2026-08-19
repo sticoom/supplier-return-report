@@ -99,3 +99,27 @@ def test_full_flow_generate_download_history_quarter(client, tmp_path):
 
     # 未生成的月下载 → 404
     assert client.get("/api/download/2026-08").status_code == 404
+
+
+def test_upload_accepts_reference_files_too(client, tmp_path):
+    """统一上传入口：月度文件接口也能识别并导入参考库文件。"""
+    monthly = make_monthly_files(tmp_path / "up2")
+    ref_files = make_reference_files(tmp_path / "ref2")
+    r = post_files(client, "/api/upload", {**monthly, **ref_files}, month=MONTH)
+    assert r.status_code == 200
+    body = r.json()
+    kinds = {f["kind"] for f in body["saved"]}
+    assert {"fba", "fbm", "dlm", "inbound"} <= kinds
+    assert "inspection" in kinds and "agreements" in kinds
+    assert body["inspections"] > 0 and body["agreements"] > 0
+
+
+def test_generate_blocked_when_reference_empty(client, tmp_path):
+    """参考库为空时生成报告 → 400，明确提示缺哪两个文件。"""
+    monthly = make_monthly_files(tmp_path / "up3")
+    post_files(client, "/api/upload", monthly, month=MONTH)
+    r = client.post("/api/generate", json={"month": MONTH})
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    text = detail if isinstance(detail, str) else str(detail)
+    assert "验货" in text and "协议" in text

@@ -70,8 +70,8 @@ def wait_healthy(url: str, timeout: float = 30.0, interval: float = 0.5) -> bool
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            if httpx.get(url, timeout=2.0).status_code == 200:
-                return True
+            if httpx.get(url, timeout=2.0, trust_env=False).status_code == 200:
+                return True   # trust_env=False：本机健康检查不走系统代理
         except httpx.HTTPError:
             pass
         time.sleep(interval)

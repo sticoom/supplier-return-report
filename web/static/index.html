@@ -39,6 +39,8 @@
          padding:8px 20px; border-radius:8px; background:#24303d; color:#fff; opacity:0; transition:opacity .25s; }
   #msg.err { background:#c0392b; } #msg.show { opacity:.95; }
   a.dl { color:var(--brand); }
+  .guide { margin:8px 0; }
+  .guide td, .guide th { text-align:left; }
 </style>
 </head>
 <body>
@@ -55,20 +57,29 @@
 </section>
 
 <section>
-  <h2>2. 上传月度文件（4 个）</h2>
-  <div class="drop" id="drop">把 FBA / FBM / DLM / 采购入库单文件拖到这里，或
+  <h2>2. 上传每月数据文件（4 个，必传）</h2>
+  <table class="guide"><thead><tr><th>文件（完整名称）</th><th>下载路径</th></tr></thead><tbody>
+    <tr><td>《退货(FBA)订单导出》.xlsx</td><td>领星 → 统计 → 退货分析 → 退货订单 → 先下载 FBA 退货订单</td></tr>
+    <tr><td>《退货(FBM)订单导出》.xlsx</td><td>同上 → 再下载 FBM 退货订单</td></tr>
+    <tr><td>《DLM退货统计SKU导出》.xlsx</td><td>图南BI → 品质 → 退货统计 → 选择上月的日期区间 → 导出</td></tr>
+    <tr><td>《采购入库单》.xlsx</td><td>图南 → 库存中心 → 采购入库单（日期范围拉够：2026-01-01 至报告月末）</td></tr>
+  </tbody></table>
+  <div class="drop" id="drop">把上面 4 个月度文件拖到这里，或
     <label><input type="file" id="monthFiles" multiple accept=".xlsx">点此选择</label></div>
   <ul class="files" id="monthList"></ul>
-  <button id="btnUpload">上传月度文件</button>
+  <button id="btnUpload">上传每月数据文件</button>
   <span class="muted" id="uploadState"></span>
 </section>
 
 <section>
-  <h2>3. 更新参考库（可选）</h2>
+  <h2>3. 上传参考数据文件（2 个，必传）</h2>
+  <table class="guide"><thead><tr><th>文件（完整名称）</th><th>来源</th></tr></thead><tbody>
+    <tr><td>《2026年验货数据报表》.xlsx</td><td>飞书知识库文件（须含「26年验货原始数据」sheet），验货数据有更新时重新上传</td></tr>
+    <tr><td>《供应商框架合同、质量协议及廉洁协议签订记录表》</td><td>飞书电子表格（导出 xlsx 或 csv），协议签订情况变化时重新上传</td></tr>
+  </tbody></table>
   <div class="row">
     <input type="file" id="refFiles" multiple accept=".xlsx,.csv">
-    <button class="secondary" id="btnRef">上传参考库</button>
-    <span class="muted">验货数据报表（含「26年验货原始数据」sheet）/ 供应商协议签订记录（xlsx 或 csv），上传后立即生效</span>
+    <button class="secondary" id="btnRef">上传参考数据</button>
   </div>
   <div class="muted" id="refState"></div>
 </section>
@@ -85,6 +96,7 @@
 
 <section>
   <h2>5. 历史报告</h2>
+  <div class="muted">为什么要保留：①「低于 200 供应商按季度累计」需要用到以前月份的数据；②以前月份的报告可直接重新下载，不用再传文件重算。</div>
   <div class="row"><button class="secondary" id="btnHist">刷新历史</button></div>
   <table id="histTable"><thead><tr>
     <th>报告月</th><th>供应商数</th><th>&lt;200 家数</th><th>操作</th>
@@ -117,9 +129,9 @@ function toast(text, err) {
 }
 function detectKind(name) {           // 与后端 web/main.py detect_kind 保持一致
   const lower = name.toLowerCase();
-  if (lower.includes("fbm")) return "FBM 退货";
-  if (lower.includes("fba")) return "FBA 退货";
-  if (lower.includes("dlm")) return "DLM 统计";
+  if (lower.includes("fbm")) return "退货(FBM)订单导出";
+  if (lower.includes("fba")) return "退货(FBA)订单导出";
+  if (lower.includes("dlm")) return "DLM退货统计SKU导出";
   if (name.includes("入库")) return "采购入库单";
   return null;
 }
@@ -162,7 +174,11 @@ $("btnUpload").addEventListener("click", async () => {
     const body = await r.json();
     if (!r.ok) throw new Error(body.detail || r.statusText);
     $("uploadState").textContent = `已保存 ${body.saved.length} 个文件`;
-    toast("月度文件上传成功");
+    if (body.inspections !== undefined) {
+      $("refState").textContent =
+        `当前参考库：验货 ${body.inspections} 批，协议 ${body.agreements} 家`;
+    }
+    toast("每月数据文件上传成功");
   } catch (err) { toast("上传失败：" + err.message, true); }
   $("btnUpload").disabled = false;
 });
@@ -170,7 +186,7 @@ $("btnUpload").addEventListener("click", async () => {
 /* ---- 参考库 ---- */
 $("btnRef").addEventListener("click", async () => {
   const files = Array.from($("refFiles").files);
-  if (!files.length) return toast("请先选择参考库文件", true);
+  if (!files.length) return toast("请先选择参考数据文件（验货数据报表 / 协议签订记录表）", true);
   const fd = new FormData();
   files.forEach(f => fd.append("files", f, f.name));
   try {
@@ -178,12 +194,16 @@ $("btnRef").addEventListener("click", async () => {
     const body = await r.json();
     if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : r.statusText);
     $("refState").textContent = `当前参考库：验货 ${body.inspections} 批，协议 ${body.agreements} 家`;
-    toast("参考库已更新，立即生效");
-  } catch (err) { toast("参考库更新失败：" + err.message, true); }
+    toast("参考数据已更新，立即生效");
+  } catch (err) { toast("参考数据上传失败：" + err.message, true); }
 });
 fetch("api/reference").then(r => r.json()).then(b => {
   if (b.inspections || b.agreements)
-    $("refState").textContent = `当前参考库：验货 ${b.inspections} 批，协议 ${b.agreements} 家`;
+    $("refState").textContent =
+      `当前参考库：验货 ${b.inspections} 批，协议 ${b.agreements} 家（数据有更新时重新上传即覆盖）`;
+  else
+    $("refState").textContent =
+      "⚠️ 参考库为空：请先上传《2026年验货数据报表》和《供应商框架合同、质量协议及廉洁协议签订记录表》，否则无法生成报告";
 });
 
 /* ---- 生成报告 ---- */

@@ -87,17 +87,35 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
 
     @app.post("/api/upload")
     async def upload(month: str = Form(...), files: list[UploadFile] = File(...)):
+        """月度文件与参考库文件统一入口：按文件名识别类型，参考库文件直接解析入库。"""
         check_month(month)
         saved = []
+        ref = store.load_reference()
+        ref_changed = False
         for f in files:
-            kind = detect_kind(f.filename or "")
+            kind = detect_kind(f.filename or "") or detect_ref_kind(f.filename or "")
             if kind is None:
-                raise HTTPException(400, f"无法识别文件类型：{f.filename}（应含 FBA/FBM/DLM/入库）")
+                raise HTTPException(
+                    400, f"无法识别文件类型：{f.filename}（应含 FBA/FBM/DLM/入库/验货/协议）")
+            if kind in ("inspection", "agreements"):
+                dest = ref_dir / Path(f.filename).name
+                await save_stream(f, dest)
+                if kind == "inspection":
+                    ref.inspections = loaders.load_inspection(dest)
+                else:
+                    ref.agreements = loaders.load_agreements(dest)
+                ref_changed = True
+                saved.append({"kind": kind, "filename": dest.name,
+                              "path": str(dest), "note": "参考库已更新"})
+                continue
             dest = uploads_dir / month / Path(f.filename).name
             await save_stream(f, dest)
             store.log_upload(month, kind, dest.name)
             saved.append({"kind": kind, "filename": dest.name, "path": str(dest)})
-        return {"month": month, "saved": saved}
+        if ref_changed:
+            store.save_reference(ref)
+        return {"month": month, "saved": saved,
+                "inspections": len(ref.inspections), "agreements": len(ref.agreements)}
 
     @app.get("/api/reference")
     def get_reference():
@@ -138,6 +156,14 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
             raise HTTPException(400, detail={"missing": missing,
                                              "msg": f"报告月 {month} 缺少月度文件，请先上传"})
         ref = store.load_reference()
+        if not ref.inspections or not ref.agreements:
+            lack = []
+            if not ref.inspections:
+                lack.append("《2026年验货数据报表.xlsx》")
+            if not ref.agreements:
+                lack.append("《供应商框架合同、质量协议及廉洁协议签订记录表》")
+            raise HTTPException(400,
+                                 f"参考数据缺少：{'、'.join(lack)}，请先在「上传参考数据文件」处上传")
         summary = run_month(month, paths["fba"], paths["fbm"], paths["dlm"], paths["inbound"],
                             ref, str(reports_dir), store=store)
         return asdict(summary)
