@@ -56,7 +56,8 @@ def test_supplier_sheet_layout_matches_manual_template(tmp_path):
     assert ws["G4"].value.startswith("QUALITY_UNACCEPTABLE")
     # 数据行
     assert ws["B5"].value == "SKU001" and ws["J5"].value == 280.0
-    assert ws["J5"].number_format == "0.00" and ws["H5"].number_format == "0.00%"
+    assert ws["J5"].number_format == "General" and ws["H5"].number_format == "0.00%"
+    assert ws["H5"].value == "=SUM(G5+F5+E5)/C5"      # 质量退货率为 Excel 公式
     # 统计/系数/考核金额
     assert ws.cell(row=6, column=1).value == "统计金额："
     assert ws.cell(row=6, column=10).value == "=SUM(J5:J5)"
@@ -68,9 +69,9 @@ def test_supplier_sheet_layout_matches_manual_template(tmp_path):
     assert ws.cell(row=8, column=10).value == "=J7*J6"
     # 备注与签字栏
     assert str(ws.cell(row=9, column=1).value).startswith("备注：数据来源于领星系统")
-    assert ws.cell(row=11, column=1).value == "采购部"
-    assert ws.cell(row=14, column=1).value == "总经理"
-    assert ws.cell(row=14, column=2).value == "最终意见："
+    assert ws.cell(row=10, column=1).value == "采购部"   # 紧接备注行（枫悦版式无空行）
+    assert ws.cell(row=13, column=1).value == "总经理"
+    assert ws.cell(row=13, column=2).value == "最终意见："
 
 
 def test_summary_low200_quarterly_review_validation_sheets(tmp_path):

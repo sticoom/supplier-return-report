@@ -11,6 +11,13 @@ from engine.models import ReportData, SupplierResult
 
 BOLD = Font(bold=True)
 TITLE_FONT = Font(bold=True, size=14)
+# 结算清单版式字体（复刻枫悦 sheet：微软雅黑 16/12/11）
+YH = "微软雅黑"
+F_TITLE = Font(name=YH, size=16, bold=True)
+F_NAME = Font(name=YH, size=12, bold=True)
+F_HDR = Font(name=YH, size=11, bold=True)
+F_DATA = Font(name=YH, size=12)
+F_LABEL = Font(name=YH, size=12, bold=True)
 THIN = Border(left=Side(style="thin"), right=Side(style="thin"),
               top=Side(style="thin"), bottom=Side(style="thin"))
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -92,77 +99,103 @@ def _summary_sheet(wb: Workbook, data: ReportData, only_low200: bool) -> None:
 
 def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
                     s: SupplierResult) -> None:
+    """供应商结算清单——版式逐项复刻 2026-7 人工结果「枫悦」sheet。"""
     ws = wb.create_sheet(_sheet_title(short_name(s.supplier), used))
     y, m = data.report_month.split("-")
-    ws.merge_cells("A1:K1")
-    ws["A1"] = f" {y} 年 {int(m)} 月供应商质量退货金额汇总表"
-    ws["A1"].font = TITLE_FONT
-    ws["A1"].alignment = CENTER
-    ws["A2"] = f"供应商名称：{s.supplier}"
-    ws["A2"].alignment = LEFT                      # 供应商名称左对齐
-    for col, w in {"A": 6, "B": 20, "C": 8, "D": 8, "E": 13, "F": 15, "G": 17,
-                   "H": 11, "I": 13, "J": 14, "K": 18}.items():
+    def _cell(row, col, value=None, font=None, align=None, numfmt=None):
+        c = ws.cell(row=row, column=col, value=value)
+        c.font = font or F_DATA
+        if align:
+            c.alignment = align
+        if numfmt:
+            c.number_format = numfmt
+        return c
+
+    def _border_rows(r1, r2):
+        for rr in range(r1, r2 + 1):
+            for cc in range(1, 12):
+                ws.cell(row=rr, column=cc).border = THIN
+
+    # 列宽 / 行高（参考枫悦 sheet 实测值）
+    for col, w in {"A": 13.7, "B": 23.7, "C": 15.6, "D": 12.1, "E": 15.6, "F": 18.8,
+                   "G": 28.5, "H": 12.8, "I": 15.2, "J": 14.0, "K": 17.6}.items():
         ws.column_dimensions[col].width = w
 
+    # 标题 + 供应商名称（各占一整行合并）
+    ws.merge_cells("A1:K1")
+    _cell(1, 1, f" {y} 年 {int(m)} 月供应商质量退货金额汇总表", F_TITLE, CENTER)
+    ws.merge_cells("A2:K2")
+    _cell(2, 1, f"供应商名称：{s.supplier}", F_NAME, LEFT)
+    ws.row_dimensions[1].height = 45
+    ws.row_dimensions[2].height = 45
+
+    # 两行表头
     main = ["序号", "SKU名称", "销量", "退货量", "质量退货量（按亚马逊平台退货描述）",
             None, None, "质量退货率", "产品采购单价\n（元）", "质量退货金额\n（元）", "备注"]
     for j, h in enumerate(main, start=1):
         if h is not None:
-            _style_header(ws, 3, [h], start_col=j)
+            _cell(3, j, h, F_HDR, CENTER)
     for j, h in enumerate(REASON_SUBS, start=5):
-        _style_header(ws, 4, [h], start_col=j)
+        _cell(4, j, h, F_HDR, CENTER)
     for rng in ("A3:A4", "B3:B4", "C3:C4", "D3:D4", "E3:G3",
                 "H3:H4", "I3:I4", "J3:J4", "K3:K4"):
         ws.merge_cells(rng)
+    ws.row_dimensions[3].height = 39
+    ws.row_dimensions[4].height = 39
 
+    # 数据行：全部居中（含备注列）；质量退货率写成 Excel 公式
     r = 5
     for i, ln in enumerate(s.skus, start=1):        # skus 已只含质量退货量>0 的行
         vals = [i, ln.sku, ln.sales_qty, ln.return_qty, ln.qty_defective,
                 ln.qty_missing_parts, ln.qty_quality_unacceptable,
-                ln.rate, ln.unit_price, ln.amount, ln.note or None]
+                f"=SUM(G{r}+F{r}+E{r})/C{r}", ln.unit_price, ln.amount, ln.note or None]
         for j, v in enumerate(vals, start=1):
-            c = ws.cell(row=r, column=j, value=v)
-            c.border = THIN
-            c.alignment = LEFT if j == 11 else CENTER   # 备注列左对齐，其余居中
-        ws.cell(row=r, column=8).number_format = "0.00%"
-        ws.cell(row=r, column=9).number_format = "0.00##"
-        ws.cell(row=r, column=10).number_format = "0.00"
+            _cell(r, j, v, F_DATA, CENTER,
+                  "0.00%" if j == 8 else ("0_ " if j == 11 else None))
         r += 1
     last = r - 1 if r > 5 else 5
 
+    # 汇总区：统计金额 / 是否签署 / 合格率 / 考核系数 / 考核金额
     r_sum = r
-    ws.cell(row=r_sum, column=1, value="统计金额：").font = BOLD
-    ws.cell(row=r_sum, column=1).alignment = RIGHT          # 统计金额/考核系数/考核金额右对齐
-    ws.cell(row=r_sum, column=10, value=f"=SUM(J5:J{last})").number_format = "0.00"
-    ws.cell(row=r_sum, column=10).alignment = RIGHT
+    ws.merge_cells(f"A{r_sum}:I{r_sum}")
+    _cell(r_sum, 1, "统计金额：", F_LABEL, RIGHT)
+    _cell(r_sum, 10, f"=SUM(J5:J{last})", F_DATA, CENTER, "0.00_ ")
     r_coef = r_sum + 1
-    ws.cell(row=r_coef, column=1, value="是否签署最新质量协议").font = BOLD
-    ws.cell(row=r_coef, column=1).alignment = CENTER
+    ws.merge_cells(f"A{r_coef}:D{r_coef}")
+    _cell(r_coef, 1, "是否签署最新质量协议", F_LABEL, CENTER)
+    ws.merge_cells(f"E{r_coef}:F{r_coef}")
     # 与手工版式一致：签了写「是」，没签/未匹配写「否」（版本信息在汇总表「是否签署质量协议(版本)」列）
-    ws.cell(row=r_coef, column=5, value="否" if s.agreement in ("否", "未匹配协议") else "是").alignment = CENTER
-    ws.cell(row=r_coef, column=8, value="考核系数：").font = BOLD
-    ws.cell(row=r_coef, column=8).alignment = RIGHT
-    ws.cell(row=r_coef, column=10, value=s.coefficient).alignment = RIGHT
+    _cell(r_coef, 5, "否" if s.agreement in ("否", "未匹配协议") else "是",
+          F_DATA, CENTER, "0%")
+    ws.merge_cells(f"G{r_coef}:I{r_coef}")
+    _cell(r_coef, 7, "考核系数：", F_LABEL, RIGHT)
+    _cell(r_coef, 10, s.coefficient, F_DATA, CENTER)
     r_pass = r_coef + 1
-    ws.cell(row=r_pass, column=1, value="当月检验合格率：").font = BOLD
-    ws.cell(row=r_pass, column=1).alignment = CENTER
-    c = ws.cell(row=r_pass, column=5, value="/" if s.pass_rate is None else s.pass_rate)
-    c.alignment = CENTER
-    if s.pass_rate is not None:
-        c.number_format = "0.00%"
-    ws.cell(row=r_pass, column=8, value="考核金额：").font = BOLD
-    ws.cell(row=r_pass, column=8).alignment = RIGHT
-    ws.cell(row=r_pass, column=10, value=f"=J{r_coef}*J{r_sum}").number_format = "0.00"
-    ws.cell(row=r_pass, column=10).alignment = RIGHT
-    note = ws.cell(row=r_pass + 1, column=1, value=NOTE_TEXT)
-    note.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.merge_cells(f"A{r_pass}:D{r_pass}")
+    _cell(r_pass, 1, "当月检验合格率：", F_LABEL, CENTER)
+    ws.merge_cells(f"E{r_pass}:F{r_pass}")
+    _cell(r_pass, 5, "/" if s.pass_rate is None else s.pass_rate,
+          F_DATA, CENTER, "0.00%")
+    ws.merge_cells(f"G{r_pass}:I{r_pass}")
+    _cell(r_pass, 7, "考核金额：", F_LABEL, RIGHT)
+    _cell(r_pass, 10, f"=J{r_coef}*J{r_sum}", F_DATA, CENTER, "0.00_ ")
+
+    # 备注行（一格两行）+ 签字栏
+    r_note = r_pass + 1
+    ws.merge_cells(f"A{r_note}:K{r_note}")
+    _cell(r_note, 1, NOTE_TEXT, F_LABEL,
+          Alignment(horizontal="left", vertical="center", wrap_text=True))
+    ws.row_dimensions[r_note].height = 46
     for k, (dept, label) in enumerate(SIGN_ROWS):
-        rr = r_pass + 3 + k
-        ws.cell(row=rr, column=1, value=dept).font = BOLD
-        ws.cell(row=rr, column=1).alignment = CENTER
-        ws.cell(row=rr, column=2, value=label).alignment = CENTER
-        ws.cell(row=rr, column=7, value="签字：").alignment = CENTER
-        ws.cell(row=rr, column=9, value="日期：").alignment = CENTER
+        rr = r_note + 1 + k
+        _cell(rr, 1, dept, F_DATA, CENTER)
+        _cell(rr, 2, label, F_DATA, CENTER)
+        ws.merge_cells(f"C{rr}:K{rr}")
+        _cell(rr, 3, " " * 42, F_DATA, CENTER)
+        ws.row_dimensions[rr].height = 46
+    # 边框最后统一写：合并之后给每个格子（含 MergedCell）赋边框，
+    # openpyxl 会把样式写进 XML（Excel 正常显示；openpyxl 读回时不显示是读取端特性）
+    _border_rows(1, r_note + len(SIGN_ROWS))
 
 
 def _quarterly_sheet(wb: Workbook, data: ReportData) -> None:
