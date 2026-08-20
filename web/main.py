@@ -190,17 +190,25 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
             raise HTTPException(400,
                                  f"参考数据缺少：{'、'.join(lack)}，请先在「上传参考数据文件」处上传")
         summary = run_month(month, paths["fba"], paths["fbm"], paths["dlm"], paths["inbound"],
-                            ref, str(reports_dir), store=store)
+                            ref, str(reports_dir), store=store, pdf=True)
         return asdict(summary)
 
     @app.get("/api/download/{month}")
-    def download(month: str):
+    def download(month: str, file: str = "main"):
+        """file: main=主工作簿 low=低于200工作簿 pdf=供应商PDF打包zip。"""
         check_month(month)
-        cands = sorted(reports_dir.glob(report_glob(month)), key=lambda p: p.stat().st_mtime)
-        if not cands:
-            raise HTTPException(404, f"报告月 {month} 尚未生成报告")
-        latest = cands[-1]
-        return FileResponse(latest, filename=latest.name)
+        y, m = month.split("-")
+        names = {
+            "main": (f"{y}年{int(m)}月供应商质量退货金额汇总表.xlsx",),
+            "low": (f"{y}年{int(m)}月供应商质量退货金额汇总表（低于200）.xlsx",),
+            "pdf": (f"{y}年{int(m)}月供应商结算单PDF.zip",),
+        }.get(file)
+        if names is None:
+            raise HTTPException(400, f"未知下载类型：{file}（main/low/pdf）")
+        target = reports_dir / names[0]
+        if not target.exists():
+            raise HTTPException(404, f"报告月 {month} 尚未生成{names[0]}")
+        return FileResponse(target, filename=target.name)
 
     @app.get("/api/history")
     def history():

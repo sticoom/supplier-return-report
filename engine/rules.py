@@ -163,21 +163,19 @@ def quarter_months(quarter: str) -> list[str]:
     return [f"{i // 12:04d}-{i % 12 + 1:02d}" for i in range(start, start + 3)]
 
 
-def first_price(inbounds: list[InboundRow], sku: str, supplier: str,
-                report_month: str) -> float | None:
-    """该 SKU×该供应商 在报告月月末及之前**首次入库**的单价（含税）。
+def latest_price(inbounds: list[InboundRow], sku: str, supplier: str,
+                 report_month: str) -> float | None:
+    """该 SKU×该供应商 在报告月月末及之前**最近一次入库**的含税单价（用户拍板 2026-08-20）。
 
-    人工结果实证（2026-07 天鑫 13 SKU：12 家吻合 + 1 家人工笔误）：
-    人工取的是年度首次入库价，而非最近一次——调价后仍按老价考核。
-    同日多条取最早出现的记录。
+    同一 SKU 多次入库且单价不同 → 取最近入库日期的含税单价；同日多条取后出现的记录。
     """
     cutoff = month_end(report_month)
     best: float | None = None
     best_key: tuple | None = None
     for i, r in enumerate(inbounds):
         if r.sku == sku and r.supplier == supplier and r.date <= cutoff:
-            key = (r.date, i)                 # 同日取先出现的记录
-            if best_key is None or key < best_key:
+            key = (r.date, i)                 # 同日取后出现的记录
+            if best_key is None or key >= best_key:
                 best_key, best = key, r.unit_price
     return best
 

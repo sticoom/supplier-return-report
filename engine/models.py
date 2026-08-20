@@ -137,3 +137,8 @@ class RunSummary:
     review_count: int
     validation_count: int
     missing_price_count: int
+    missing_price_skus: list = field(default_factory=list)   # 缺价明细（保留字段，剔除老品后通常为空）
+    low200_file_name: str = ""
+    low200_file_path: str = ""
+    pdf_zip_path: str = ""        # 每供应商 PDF 的 zip 包路径（未启用/失败为空）
+    pdf_count: int = 0

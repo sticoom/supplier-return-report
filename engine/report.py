@@ -258,23 +258,45 @@ def _validation_sheet(wb: Workbook, data: ReportData) -> None:
         vd.cell(row=i, column=2, value=item.detail)
 
 
-def write_report(out_dir: str, data: ReportData) -> str:
+def write_report(out_dir: str, data: ReportData) -> tuple[str, str]:
+    """生成两个工作簿（用户拍板 2026-08-20：低于200 与正常分开）：
+
+    ① 主工作簿：供应商费用明细 + ≥200 供应商结算清单 + 季度累计/复核/批次合格率/数据校验
+    ② 低于200工作簿：低于200清单 + <200 供应商结算清单
+    返回 (主工作簿路径, 低于200工作簿路径)。
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     y, m = data.report_month.split("-")
     path = out / f"{y}年{int(m)}月供应商质量退货金额汇总表.xlsx"
+    low_path = out / f"{y}年{int(m)}月供应商质量退货金额汇总表（低于200）.xlsx"
 
     wb = Workbook()
     wb.remove(wb.active)
     used = set(FIXED_SHEET_NAMES)
     _summary_sheet(wb, data, only_low200=False)
-    for s in sorted(data.suppliers + data.low200, key=lambda x: x.supplier):
+    for s in sorted(data.suppliers, key=lambda x: x.supplier):
         _supplier_sheet(wb, used, data, s)
-    _summary_sheet(wb, data, only_low200=True)
     _quarterly_sheet(wb, data)
     _review_sheet(wb, data)
     _batch_matrix_sheet(wb, data)
     _validation_sheet(wb, data)
+    wb.save(path)
 
+    wb_low = Workbook()
+    wb_low.remove(wb_low.active)
+    used_low = set(FIXED_SHEET_NAMES)
+    _summary_sheet(wb_low, data, only_low200=True)
+    for s in sorted(data.low200, key=lambda x: x.supplier):
+        _supplier_sheet(wb_low, used_low, data, s)
+    wb_low.save(low_path)
+    return str(path), str(low_path)
+
+
+def write_supplier_workbook(path, data: ReportData, s: SupplierResult) -> str:
+    """单供应商工作簿（PDF 转换的中间产物）。"""
+    wb = Workbook()
+    wb.remove(wb.active)
+    _supplier_sheet(wb, set(), data, s)
     wb.save(path)
     return str(path)

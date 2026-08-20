@@ -99,7 +99,9 @@
   <h2>4. 生成报告</h2>
   <div class="row">
     <button id="btnGen">生成报告</button>
-    <a id="dlLink" class="dl" href="#" style="display:none">下载本月报告 xlsx</a>
+    <a id="dlLink" class="dl" href="#" style="display:none">下载主报告 xlsx</a>
+    <a id="dlLow" class="dl" href="#" style="display:none">下载低于200工作簿 xlsx</a>
+    <a id="dlPdf" class="dl" href="#" style="display:none">下载供应商 PDF 打包 zip</a>
   </div>
   <div class="stats" id="summary"></div>
   <div class="muted" id="genState"></div>
@@ -248,12 +250,19 @@ $("btnGen").addEventListener("click", async () => {
                    ["缺价SKU", body.missing_price_count]];
     $("summary").innerHTML = items.map(([k, v]) => `<div class="stat"><b>${v}</b>${k}</div>`).join("");
     const link = $("dlLink");
-    link.href = `api/download/${month}`; link.style.display = "inline";
+    link.href = `api/download/${month}?file=main`; link.style.display = "inline";
     link.download = body.file_name;
-    $("genState").textContent = `已生成：${body.file_name}` +
-      (body.missing_price_count > 20
-        ? `　⚠️ 有 ${body.missing_price_count} 个 SKU 缺采购单价——请导出 2026-01-01 至报告月末的完整《采购入库单》重新上传后再生成`
-        : "");
+    const low = $("dlLow");
+    if (body.low200_file_name) {
+      low.href = `api/download/${month}?file=low`; low.style.display = "inline";
+      low.download = body.low200_file_name;
+    }
+    const pdf = $("dlPdf");
+    if (body.pdf_zip_path && body.pdf_count) {
+      pdf.href = `api/download/${month}?file=pdf`; pdf.style.display = "inline";
+      pdf.textContent = `下载供应商 PDF 打包 zip（${body.pdf_count} 份）`;
+    }
+    $("genState").textContent = `已生成：${body.file_name}`;
     toast("报告生成成功");
     loadHistory();
   } catch (err) { toast("生成失败：" + err.message, true); $("genState").textContent = ""; }

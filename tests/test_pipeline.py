@@ -66,14 +66,15 @@ def test_run_month_golden_numbers(tmp_path):
     summary, store = _run(tmp_path)
     assert summary.supplier_count == 3 and summary.low200_count == 2
     assert summary.review_count == 2 and summary.missing_price_count == 0
+    assert summary.missing_price_skus == []
     assert summary.validation_count == 3   # 未匹配协议(丙) + DLM缺失SKU + 口径差异
     assert summary.file_name == "2026年7月供应商质量退货金额汇总表.xlsx"
     assert (tmp_path / "reports" / summary.file_name).exists()
 
     rows = {(r["supplier"]): r for r in store.month_suppliers("2026-07")}
     jia = rows[JIA]
-    assert jia["deduction"] == 240.0 and jia["coefficient"] == 0.2
-    assert jia["undertaken"] == 48 and jia["under_200"] == 0
+    assert jia["deduction"] == 280.0 and jia["coefficient"] == 0.2
+    assert jia["undertaken"] == 56 and jia["under_200"] == 0
     yi = rows[YI]
     assert yi["deduction"] == 15.0 and yi["undertaken"] == 15 and yi["under_200"] == 1
     bing = rows[BING]
@@ -92,7 +93,7 @@ def test_run_month_report_data_contents(tmp_path):
     jia_lines = data.suppliers[0].skus
     assert jia_lines[0].sku == "SKU001"
     assert (jia_lines[0].qty_defective, jia_lines[0].qty_missing_parts) == (3.0, 1.0)
-    assert jia_lines[0].rate == 0.04 and jia_lines[0].amount == 240.0
+    assert jia_lines[0].rate == 0.04 and jia_lines[0].amount == 280.0
     yi_line = [s for s in data.low200 if s.supplier == YI][0].skus[0]
     assert yi_line.qty_quality_unacceptable == 0.5 and yi_line.amount == 15.0
     assert yi_line.note == "按交货比例分摊"
@@ -149,11 +150,9 @@ def test_cli_golden_end_to_end(tmp_path, capsys):
     assert len(store.month_suppliers("2026-07")) == 3
     assert len(store.load_reference().inspections) == 35   # CLI 已把参考库存进 db
 
-
-def test_unmapped_supplier_labeled_not_blank(tmp_path):
-    """DLM 无默认供应商但存在质量退货 → 汇总行显示（未匹配供应商）并出校验项，不出现空名行。"""
+def test_no_receipt_sku_dropped_entirely(tmp_path):
+    """无交货记录的 SKU（老品）整体剔除：不计算、不出现空名/未匹配供应商、不出校验项。"""
     fba, fbm, dlm, inbound = _golden_inputs(tmp_path)
-    # FBA 的 A5 行是 SKU003(DEFECTIVE) —— DLM 中无 SKU003；再造一行有 DLM 行但无供应商的 SKU004
     fba2 = make_fba_file(tmp_path / "fba2.xlsx", [
         ("A1", "SKU001", 2, "DEFECTIVE(存在瑕疵)", "2026-07-05", "破了"),
         ("A6", "SKU004", 1, "DEFECTIVE(存在瑕疵)", "2026-07-06", ""),
@@ -166,11 +165,13 @@ def test_unmapped_supplier_labeled_not_blank(tmp_path):
     store = pipeline.Store(str(tmp_path / "app2.db"))
     summary = pipeline.run_month("2026-07", fba2, fbm, dlm2, inbound, ref,
                                  str(tmp_path / "reports2"), store=store)
-    rows = {r["supplier"]: r for r in store.month_suppliers("2026-07")}
-    assert "" not in rows
-    assert "（未匹配供应商）" in rows
+    rows = {r["supplier"] for r in store.month_suppliers("2026-07")}
+    assert "" not in rows and "（未匹配供应商）" not in rows
     import openpyxl
     wb = openpyxl.load_workbook(tmp_path / "reports2" / summary.file_name)
     ws = wb["数据校验"]
     kinds = {str(r[0].value) for r in ws.iter_rows(min_row=2) if r[0].value}
-    assert "供应商未匹配" in kinds
+    assert "无交货数据" not in kinds and "供应商未匹配" not in kinds
+    all_cells = " ".join(str(c.value) for sh in wb.worksheets
+                         for row in sh.iter_rows() for c in row if c.value)
+    assert "SKU004" not in all_cells          # 彻底不出现

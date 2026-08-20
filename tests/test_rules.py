@@ -100,12 +100,12 @@ def _inb(date, sup, sku, qty, price):
     return m.InboundRow(date, sup, sku, qty, price)
 
 
-def test_first_price_earliest_on_or_before_month_end():
+def test_latest_price_latest_on_or_before_month_end():
     rows = [_inb("2026-06-01", "甲", "S1", 10, 60.0), _inb("2026-07-10", "甲", "S1", 10, 70.0),
             _inb("2026-08-02", "甲", "S1", 5, 99.0), _inb("2026-07-10", "乙", "S1", 5, 88.0)]
-    assert rules.first_price(rows, "S1", "甲", "2026-07") == 60.0  # 首次入库价（6月的60，非7月70/8月99）
-    assert rules.first_price(rows, "S1", "乙", "2026-07") == 88.0  # 各供各价
-    assert rules.first_price(rows, "S1", "甲", "2026-05") is None
+    assert rules.latest_price(rows, "S1", "甲", "2026-07") == 70.0  # 最近入库价（7月70，8月99不算）
+    assert rules.latest_price(rows, "S1", "乙", "2026-07") == 88.0  # 各供各价
+    assert rules.latest_price(rows, "S1", "甲", "2026-05") is None
 
 
 def test_delivery_shares_by_receipt_qty():

@@ -35,6 +35,7 @@ from engine.models import ReferenceData
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPORT_NAME = "2026年7月供应商质量退货金额汇总表.xlsx"
+LOW_REPORT_NAME = "2026年7月供应商质量退货金额汇总表（低于200）.xlsx"
 QUALITY_CODES = ("DEFECTIVE", "MISSING_PARTS", "QUALITY_UNACCEPTABLE")
 
 # 真实样例文件（只读参考，不入库；主 Agent 集成验证用）
@@ -50,12 +51,15 @@ REAL = {
 
 # ---------- 报告读取 / 独立重算辅助（openpyxl 直读单元格，不经过 engine 规则） ----------
 
-def _supplier_sheet(wb, supplier: str):
-    """按 A2 标签「供应商名称：{全名}」定位该供应商的结算清单 sheet。"""
+def _supplier_sheet(cli_run, supplier: str):
+    """按 A2 标签定位供应商结算清单 sheet（先主工作簿，再低于200工作簿）。"""
     tag = f"供应商名称：{supplier}"
-    for ws in wb.worksheets:
-        if ws["A2"].value == tag:
-            return ws
+    for book in (cli_run.report, cli_run.low_report):
+        if not Path(book).exists():
+            continue
+        for ws in openpyxl.load_workbook(book).worksheets:
+            if ws["A2"].value == tag:
+                return ws
     raise AssertionError(f"报告中找不到 {supplier} 的结算清单 sheet")
 
 
@@ -160,7 +164,8 @@ def cli_run(tmp_path_factory):
     assert proc.returncode == 0, f"CLI 失败:\n{proc.stderr}"
     summary = json.loads(proc.stdout)
     return SimpleNamespace(summary=summary, monthly=monthly, refs=refs,
-                           out=tmp / "reports", report=tmp / "reports" / REPORT_NAME)
+                           out=tmp / "reports", report=tmp / "reports" / REPORT_NAME,
+                           low_report=tmp / "reports" / LOW_REPORT_NAME)
 
 
 def test_cli_full_run_produces_report(cli_run):
@@ -171,15 +176,16 @@ def test_cli_full_run_produces_report(cli_run):
     assert s["review_count"] == 2 and s["missing_price_count"] == 0
     assert cli_run.report.exists()
     wb = openpyxl.load_workbook(cli_run.report)
-    for name in ("供应商费用明细", "低于200清单", "季度累计", "买家备注复核清单",
+    for name in ("供应商费用明细", "季度累计", "买家备注复核清单",
                  "供应商批次合格率", "数据校验"):
         assert name in wb.sheetnames, f"缺 sheet {name}"
+    assert "低于200清单" in openpyxl.load_workbook(cli_run.low_report).sheetnames
 
 
 def test_sample_1_pass_rate_crosscheck_with_inspection_file(cli_run):
     """抽查供应商①（甲，有验货）：报告「当月检验合格率」== 验货 xlsx 原始单元格独立重算。"""
     wb = openpyxl.load_workbook(cli_run.report)
-    ws = _supplier_sheet(wb, JIA)
+    ws = _supplier_sheet(cli_run, JIA)
     reported = _labeled_value(ws, "当月检验合格率", 5)
     expected = _recount_pass_rate(cli_run.refs[INSPECTION_NAME], JIA, MONTH)
     assert expected is not None, "甲在 2026-07 应有验货记录"
@@ -189,29 +195,28 @@ def test_sample_1_pass_rate_crosscheck_with_inspection_file(cli_run):
 
 def test_sample_2_sku_qty_times_price_equals_amount(cli_run):
     """抽查供应商②（全部 3 家）：每条有价 SKU 行 (E+F+G)×I=J；甲的件数与订单独立重算一致。"""
-    wb = openpyxl.load_workbook(cli_run.report)
     for supplier in (JIA, YI, BING):
-        for row in _sku_rows(_supplier_sheet(wb, supplier)):
+        for row in _sku_rows(_supplier_sheet(cli_run, supplier)):
             qty = (row["qty_def"] or 0) + (row["qty_mp"] or 0) + (row["qty_qu"] or 0)
             if row["price"] is not None:
                 assert row["amount"] is not None, (supplier, row)
                 assert abs(row["amount"] - qty * row["price"]) < 1e-9, (supplier, row)
 
     # 甲 SKU001：件数用 FBA/FBM 原始订单独立重算交叉校验（3 DEF + 1 MP，非质量单不计）
-    row = _sku_rows(_supplier_sheet(wb, JIA))[0]
+    row = _sku_rows(_supplier_sheet(cli_run, JIA))[0]
     recount = _recount_quality_qty(cli_run.monthly[FBA_NAME], cli_run.monthly[FBM_NAME],
                                    "SKU001")
     assert (row["qty_def"], row["qty_mp"], row["qty_qu"]) == (
         recount["DEFECTIVE"], recount["MISSING_PARTS"], recount["QUALITY_UNACCEPTABLE"])
-    assert row["price"] == 60.0                    # 首次入库价（06-01 的 60，非 07-10 的 70 / 08-02 的 99）
-    assert abs(row["amount"] - 4 * 60.0) < 1e-9
+    assert row["price"] == 70.0                    # 最近入库价（07-10 的 70，非 08-02 的 99）
+    assert abs(row["amount"] - 4 * 70.0) < 1e-9
 
 
 def test_sample_3_second_supplier_split_rows(cli_run):
     """抽查供应商③（乙/丙，交货拆分）：note=按交货比例分摊、小数件数、两行件数守恒、各自单价。"""
     wb = openpyxl.load_workbook(cli_run.report)
-    yi = _sku_rows(_supplier_sheet(wb, YI))[0]
-    bing = _sku_rows(_supplier_sheet(wb, BING))[0]
+    yi = _sku_rows(_supplier_sheet(cli_run, YI))[0]
+    bing = _sku_rows(_supplier_sheet(cli_run, BING))[0]
     assert yi["note"] == bing["note"] == "按交货比例分摊"
     assert yi["qty_qu"] == 0.5 and bing["qty_qu"] == 0.5     # 比例分摊 → 小数件数保留
     assert abs((yi["qty_qu"] + bing["qty_qu"]) - 1.0) < 1e-9  # 拆分守恒 = 订单原始 1 件

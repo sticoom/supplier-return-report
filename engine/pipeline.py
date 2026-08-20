@@ -12,7 +12,7 @@ from engine import loaders, rules
 from engine.models import (AgreementInfo, InspectionBatch, QuarterRow, ReportData,
                            ReferenceData, ReviewLine, RunSummary, SkuLine,
                            SupplierResult, ValidationItem)
-from engine.report import write_report
+from engine.report import write_report, write_supplier_workbook
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS month_supplier (
@@ -104,6 +104,7 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
     dlm_agg = rules.aggregate_dlm(dlm_rows)
     validation: list[ValidationItem] = []
     lines_by_supplier: dict[str, list[SkuLine]] = {}
+    dropped = 0                        # 无交货记录被剔除的老品 SKU 数（仅用于覆盖告警）
 
     # 验货汇总页的供应商是简称（云晴/蓓圣美…）→ 唯一包含匹配映射为全名
     # DLM「其他供应商」可能是分号拼接的多个供应商 → 拆开后再进候选池
@@ -133,22 +134,16 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
             continue
         rate = rules.quality_return_rate(total_q, agg.sales_qty)
         shares = rules.delivery_shares(inbound_rows, sku, report_month)
-        if shares:               # 规则13：按交货数量占比分摊给所有交过货的供应商
-            multi = len(shares) > 1
-            plan = [(sup, {k: v * share for k, v in q.items()},
-                     rules.first_price(inbound_rows, sku, sup, report_month),
-                     "按交货比例分摊" if multi else "") for sup, share in shares.items()]
-        elif agg.default_supplier:   # 规则14：无交货数据 → 归默认供应商 + 人工复核
-            plan = [(agg.default_supplier, q,
-                     rules.first_price(inbound_rows, sku, agg.default_supplier, report_month),
-                     "无交货数据，按默认供应商归集，需人工复核")]
-            validation.append(ValidationItem(
-                "无交货数据",
-                f"{sku} 无入库记录，质量退货 {total_q} 件按默认供应商 {agg.default_supplier} 归集"))
-        else:
-            plan = [("", q, None, "无交货数据且无默认供应商，需人工复核")]
-            validation.append(ValidationItem(
-                "无交货数据", f"{sku} 无入库记录且 DLM 无默认供应商，质量退货 {total_q} 件未归属"))
+        if not shares:
+            # 用户拍板 2026-08-20：采购入库单（1月起）中无该 SKU 交货记录 =
+            # 早已不再交货的老品 → 整体剔除：不计算、不出现在任何清单/校验里
+            dropped += 1
+            continue
+        # 规则13：按交货数量占比分摊给所有交过货的供应商，单价取最近一次入库含税价
+        multi = len(shares) > 1
+        plan = [(sup, {k: v * share for k, v in q.items()},
+                 rules.latest_price(inbound_rows, sku, sup, report_month),
+                 "按交货比例分摊" if multi else "") for sup, share in shares.items()]
         for sup, qq, price, note in plan:
             amount = rules.round2(sum(qq.values()) * price) if price is not None else None
             if price is None:      # 规则12：缺价 → 金额留空、不计应扣、数量照常展示
@@ -161,11 +156,7 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                 rate=rate, unit_price=price, amount=amount, note=note))
 
     results = []
-    for sup_raw, lines in lines_by_supplier.items():
-        sup = sup_raw.strip() or "（未匹配供应商）"
-        if sup != sup_raw:
-            validation.append(ValidationItem(
-                "供应商未匹配", "存在质量退货 SKU 的 DLM 行无默认供应商，无法归组计费，需人工补充供应商映射"))
+    for sup, lines in lines_by_supplier.items():
         deduction = rules.round2(sum(l.amount for l in lines if l.amount is not None))
         label = rules.agreement_label(ref.agreements, sup)
         if label == "未匹配协议":
@@ -204,22 +195,22 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                             key=lambda r: (-r.deduction, r.supplier))
     data.low200 = sorted([r for r in results if r.under_200], key=lambda r: r.supplier)
     data.review = review
-    # 入库单覆盖不足 → 置顶醒目警告（常见原因：导出日期范围太窄，只覆盖了月末几天）
-    sku_total = sum(len(r.skus) for r in results)
-    miss = sum(1 for v in validation if v.kind == "缺单价")
-    if sku_total and miss / sku_total >= 0.3:
+    # 剔除占比异常告警：正常情况剔除的都是不再交货的老品（少量）；
+    # 若剔除占比过高，大概率是采购入库单导出范围太窄/传错文件 → 只报数量提醒核对
+    kept = sum(len(r.skus) for r in results)
+    if dropped and kept + dropped and dropped / (kept + dropped) >= 0.3:
         validation.insert(0, ValidationItem(
             "入库单覆盖不足",
-            f"有报价 SKU 仅 {sku_total - miss}/{sku_total}（缺价 {miss} 个，占 {miss / sku_total:.0%}）。"
-            f"请到 图南→库存中心→采购入库单 导出 2026-01-01 至报告月末 的完整数据后重新上传，"
-            f"否则大量质量退货金额无法计算"))
+            f"有质量退货的 SKU 中 {dropped} 个（占 {dropped / (kept + dropped):.0%}）在采购入库单里"
+            f"无交货记录已按老品剔除——若非预期，请检查采购入库单是否导出了 2026-01-01 至报告月末 的完整数据"))
     data.validation = validation
     data.batch_matrix = rules.batch_matrix(ref.inspections)   # 第 4 节「供应商批次合格率」sheet
     return data
 
 
 def run_month(report_month, fba_path, fbm_path, dlm_path, inbound_path,
-              ref: ReferenceData, out_dir: str, store: Store | None = None) -> RunSummary:
+              ref: ReferenceData, out_dir: str, store: Store | None = None,
+              pdf: bool = False) -> RunSummary:
     data = build_report_data(
         report_month,
         loaders.load_fba(fba_path), loaders.load_fbm(fbm_path), loaders.load_dlm(dlm_path),
@@ -227,12 +218,60 @@ def run_month(report_month, fba_path, fbm_path, dlm_path, inbound_path,
     if store is not None:
         store.upsert_month(report_month, data.suppliers + data.low200)
         data.quarterly = store.quarter_rows(report_month)   # 历史+本月合成
-    path = write_report(out_dir, data)
-    return RunSummary(
+    path, low_path = write_report(out_dir, data)
+    summary = RunSummary(
         report_month=report_month, file_name=Path(path).name, report_path=str(path),
         supplier_count=len(data.suppliers) + len(data.low200), low200_count=len(data.low200),
         review_count=len(data.review), validation_count=len(data.validation),
-        missing_price_count=sum(1 for v in data.validation if v.kind == "缺单价"))
+        missing_price_count=sum(1 for v in data.validation if v.kind == "缺单价"),
+        missing_price_skus=[v.detail for v in data.validation if v.kind == "缺单价"],
+        low200_file_name=Path(low_path).name, low200_file_path=str(low_path))
+    if pdf:
+        try:
+            pdf_zip, n = generate_supplier_pdfs(out_dir, data)
+            summary.pdf_zip_path, summary.pdf_count = pdf_zip, n
+        except Exception as e:      # soffice 缺失等 → 报告照常交付，PDF 标记失败
+            summary.pdf_zip_path, summary.pdf_count = "", 0
+            data.validation.append(ValidationItem(
+                "PDF生成失败", f"供应商 PDF 未生成：{e}"))
+            write_report(out_dir, data)   # 把校验项补进报告
+    return summary
+
+
+def generate_supplier_pdfs(out_dir: str, data: ReportData) -> tuple[str, int]:
+    """每个供应商结算清单 → 单 sheet xlsx → LibreOffice 转 PDF（年-月+供应商.pdf）→ 打包 zip。"""
+    import shutil
+    import subprocess
+    import tempfile
+    import zipfile
+
+    y, m = data.report_month.split("-")
+    out = Path(out_dir)
+    pdf_dir = out / "pdfs" / data.report_month
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        raise RuntimeError("未找到 soffice/libreoffice（服务器需安装 libreoffice-calc）")
+    suppliers = sorted(data.suppliers + data.low200, key=lambda s: s.supplier)
+    made: list[Path] = []
+    with tempfile.TemporaryDirectory() as td:
+        for s in suppliers:
+            tmp_xlsx = str(Path(td) / "one.xlsx")
+            write_supplier_workbook(tmp_xlsx, data, s)
+            subprocess.run([soffice, "--headless", "--convert-to", "pdf",
+                            "--outdir", td, tmp_xlsx],
+                           check=True, capture_output=True, timeout=120)
+            src = Path(td) / "one.pdf"
+            if not src.exists():
+                continue
+            dst = pdf_dir / f"{y}-{int(m)}{s.supplier}.pdf"
+            shutil.move(str(src), dst)
+            made.append(dst)
+    zip_path = out / f"{y}年{int(m)}月供应商结算单PDF.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in made:
+            zf.write(p, p.name)
+    return str(zip_path), len(made)
 
 
 def main(argv=None) -> int:

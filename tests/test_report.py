@@ -37,15 +37,17 @@ def test_short_name_strips_region_and_suffix():
 
 
 def test_write_report_file_name_and_sheet_order(tmp_path):
-    path = write_report(str(tmp_path), _mk_data())
+    path, _low = write_report(str(tmp_path), _mk_data())
     assert Path(path).name == "2026年7月供应商质量退货金额汇总表.xlsx"
     wb = openpyxl.load_workbook(path)
-    assert wb.sheetnames == ["供应商费用明细", "甲五金制品", "乙塑料制品", "低于200清单",
-                             "季度累计", "买家备注复核清单", "供应商批次合格率", "数据校验"]
+    assert wb.sheetnames == ["供应商费用明细", "甲五金制品", "季度累计",
+                             "买家备注复核清单", "供应商批次合格率", "数据校验"]
+    assert Path(_low).name == "2026年7月供应商质量退货金额汇总表（低于200）.xlsx"
+    assert openpyxl.load_workbook(_low).sheetnames == ["低于200清单", "乙塑料制品"]
 
 
 def test_supplier_sheet_layout_matches_manual_template(tmp_path):
-    path = write_report(str(tmp_path), _mk_data())
+    path, _low = write_report(str(tmp_path), _mk_data())
     wb = openpyxl.load_workbook(path)
     ws = wb["甲五金制品"]
     assert ws["A1"].value == " 2026 年 7 月供应商质量退货金额汇总表"
@@ -75,7 +77,7 @@ def test_supplier_sheet_layout_matches_manual_template(tmp_path):
 
 
 def test_summary_low200_quarterly_review_validation_sheets(tmp_path):
-    path = write_report(str(tmp_path), _mk_data())
+    path, _low = write_report(str(tmp_path), _mk_data())
     wb = openpyxl.load_workbook(path)
     ws = wb["供应商费用明细"]
     assert [c.value for c in ws[1]][:8] == ["序号", "供应商", "应扣金额", "批次合格率",
@@ -83,7 +85,7 @@ def test_summary_low200_quarterly_review_validation_sheets(tmp_path):
                                             "应承担金额", "备注"]
     vals = [ws.cell(row=2, column=i).value for i in range(1, 9)]
     assert vals[1] == "东莞市甲五金制品有限公司" and vals[2] == 280.0 and vals[6] == 56
-    low = wb["低于200清单"]
+    low = openpyxl.load_workbook(_low)["低于200清单"]
     assert low.cell(row=2, column=2).value == "台州乙塑料制品有限公司"
     assert low.cell(row=1, column=9).value == "所属季度"
     q = wb["季度累计"]
@@ -97,7 +99,7 @@ def test_summary_low200_quarterly_review_validation_sheets(tmp_path):
 
 def test_batch_matrix_sheet_layout(tmp_path):
     """第 4 节第 7 个 sheet：供应商×月份矩阵（总批数/不合格批数/批次合格率），供应商用全名。"""
-    path = write_report(str(tmp_path), _mk_data())
+    path, _low = write_report(str(tmp_path), _mk_data())
     wb = openpyxl.load_workbook(path)
     ws = wb["供应商批次合格率"]
     # 两行表头：A1:A2 供应商；每个月份行 1 合并 3 列，行 2 为三子列
@@ -125,7 +127,7 @@ def test_sheet_name_truncation_and_dedupe(tmp_path):
     data = _mk_data()
     dup = _mk_supplier("深圳市甲五金制品有限公司", 300.0)   # short_name 也是 甲五金制品
     data.suppliers.append(dup)
-    path = write_report(str(tmp_path), data)
+    path, _low = write_report(str(tmp_path), data)
     wb = openpyxl.load_workbook(path)
     names = wb.sheetnames
     assert "甲五金制品" in names and "甲五金制品(2)" in names

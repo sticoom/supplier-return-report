@@ -86,7 +86,7 @@ def test_full_flow_generate_download_history_quarter(client, tmp_path):
     assert {h["month"] for h in r.json()} == {MONTH}
     r = client.get(f"/api/history/{MONTH}")
     rows = {row["supplier"]: row for row in r.json()}
-    assert rows[JIA]["deduction"] == 240.0 and rows[JIA]["undertaken"] == 48
+    assert rows[JIA]["deduction"] == 280.0 and rows[JIA]["undertaken"] == 56
     assert rows[BING]["agreement"] == "未匹配协议"
 
     # 季度累计：明细行 + 小计行
