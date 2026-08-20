@@ -83,12 +83,21 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
 
     @app.get("/")
     def index():
-        return FileResponse(static_dir / "index.html")
+        # no-cache：保证页面更新后浏览器立即用新版（旧版多文件拖拽区曾引发重复上传问题）
+        return FileResponse(static_dir / "index.html",
+                            headers={"Cache-Control": "no-cache, must-revalidate"})
 
     @app.post("/api/upload")
     async def upload(month: str = Form(...), files: list[UploadFile] = File(...)):
-        """月度文件与参考库文件统一入口：按文件名识别类型，参考库文件直接解析入库。"""
+        """月度文件与参考库文件统一入口：按文件名识别类型，参考库文件直接解析入库。
+
+        同一批出现多份同类月度文件（如两份采购入库单）时，只保留数据量大的那份
+        ——防止小范围导出把完整导出顶掉（2026-07 曾因两份入库单同传导致 422 个 SKU 缺价）。
+        """
         check_month(month)
+        monthly: dict[str, UploadFile] = {}       # kind -> 最大的一份
+        monthly_size: dict[str, int] = {}
+        skipped: list[dict] = []
         saved = []
         ref = store.load_reference()
         ref_changed = False
@@ -108,13 +117,29 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
                 saved.append({"kind": kind, "filename": dest.name,
                               "path": str(dest), "note": "参考库已更新"})
                 continue
+            if kind in monthly:
+                # 比较已暂存与当前：留大的
+                kept_size = monthly_size[kind]
+                cur_size = f.size or 0
+                if cur_size > kept_size:
+                    skipped.append({"kind": kind, "filename": monthly[kind].filename,
+                                    "reason": f"同批有更大的同类文件，已忽略（{kept_size} < {cur_size} 字节）"})
+                    monthly[kind] = f
+                    monthly_size[kind] = cur_size
+                else:
+                    skipped.append({"kind": kind, "filename": f.filename,
+                                    "reason": f"同批有更大的同类文件，已忽略（{cur_size} ≤ {kept_size} 字节）"})
+                continue
+            monthly[kind] = f
+            monthly_size[kind] = f.size or 0
+        for kind, f in monthly.items():
             dest = uploads_dir / month / Path(f.filename).name
             await save_stream(f, dest)
             store.log_upload(month, kind, dest.name)
             saved.append({"kind": kind, "filename": dest.name, "path": str(dest)})
         if ref_changed:
             store.save_reference(ref)
-        return {"month": month, "saved": saved,
+        return {"month": month, "saved": saved, "skipped": skipped,
                 "inspections": len(ref.inspections), "agreements": len(ref.agreements)}
 
     @app.get("/api/reference")
