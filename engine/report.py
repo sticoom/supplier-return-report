@@ -14,6 +14,8 @@ TITLE_FONT = Font(bold=True, size=14)
 THIN = Border(left=Side(style="thin"), right=Side(style="thin"),
               top=Side(style="thin"), bottom=Side(style="thin"))
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
+RIGHT = Alignment(horizontal="right", vertical="center")
 
 BAD_SHEET_CHARS = re.compile(r"[\[\]:*?/\\]")   # Excel sheet 名非法字符
 FIXED_SHEET_NAMES = ("供应商费用明细", "低于200清单", "季度累计", "买家备注复核清单",
@@ -22,7 +24,7 @@ SUMMARY_HEADER = ["序号", "供应商", "应扣金额", "批次合格率", "是
                   "承担比例(考核系数)", "应承担金额", "备注"]
 REASON_SUBS = ["DEFECTIVE \n(存在瑕疵)", "MISSING_PARTS\n (部分零件缺失)",
                "QUALITY_UNACCEPTABLE\n (质量未达到期望)"]
-NOTE_TEXT = ("备注：数据来源于领星系统，亚马逊后台数据；如对数据有疑问，请及时联系德拉姆品质部。"
+NOTE_TEXT = ("备注：数据来源于领星系统，亚马逊后台数据；如对数据有疑问，请及时联系德拉姆品质部。\n"
              "考核依据：依据《质量保证协议》中质量退货金额条款。")
 SIGN_ROWS = [("采购部", "审核及优化意见简述："), ("品质部", "审核及优化意见简述："),
              ("供应链中心", "审核及优化意见简述："), ("总经理", "最终意见：")]
@@ -95,7 +97,9 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
     ws.merge_cells("A1:K1")
     ws["A1"] = f" {y} 年 {int(m)} 月供应商质量退货金额汇总表"
     ws["A1"].font = TITLE_FONT
+    ws["A1"].alignment = CENTER
     ws["A2"] = f"供应商名称：{s.supplier}"
+    ws["A2"].alignment = LEFT                      # 供应商名称左对齐
     for col, w in {"A": 6, "B": 20, "C": 8, "D": 8, "E": 13, "F": 15, "G": 17,
                    "H": 11, "I": 13, "J": 14, "K": 18}.items():
         ws.column_dimensions[col].width = w
@@ -119,6 +123,7 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
         for j, v in enumerate(vals, start=1):
             c = ws.cell(row=r, column=j, value=v)
             c.border = THIN
+            c.alignment = LEFT if j == 11 else CENTER   # 备注列左对齐，其余居中
         ws.cell(row=r, column=8).number_format = "0.00%"
         ws.cell(row=r, column=9).number_format = "0.00##"
         ws.cell(row=r, column=10).number_format = "0.00"
@@ -127,27 +132,37 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
 
     r_sum = r
     ws.cell(row=r_sum, column=1, value="统计金额：").font = BOLD
+    ws.cell(row=r_sum, column=1).alignment = RIGHT          # 统计金额/考核系数/考核金额右对齐
     ws.cell(row=r_sum, column=10, value=f"=SUM(J5:J{last})").number_format = "0.00"
+    ws.cell(row=r_sum, column=10).alignment = RIGHT
     r_coef = r_sum + 1
     ws.cell(row=r_coef, column=1, value="是否签署最新质量协议").font = BOLD
+    ws.cell(row=r_coef, column=1).alignment = CENTER
     # 与手工版式一致：签了写「是」，没签/未匹配写「否」（版本信息在汇总表「是否签署质量协议(版本)」列）
-    ws.cell(row=r_coef, column=5, value="否" if s.agreement in ("否", "未匹配协议") else "是")
+    ws.cell(row=r_coef, column=5, value="否" if s.agreement in ("否", "未匹配协议") else "是").alignment = CENTER
     ws.cell(row=r_coef, column=8, value="考核系数：").font = BOLD
-    ws.cell(row=r_coef, column=10, value=s.coefficient)
+    ws.cell(row=r_coef, column=8).alignment = RIGHT
+    ws.cell(row=r_coef, column=10, value=s.coefficient).alignment = RIGHT
     r_pass = r_coef + 1
     ws.cell(row=r_pass, column=1, value="当月检验合格率：").font = BOLD
+    ws.cell(row=r_pass, column=1).alignment = CENTER
     c = ws.cell(row=r_pass, column=5, value="/" if s.pass_rate is None else s.pass_rate)
+    c.alignment = CENTER
     if s.pass_rate is not None:
         c.number_format = "0.00%"
     ws.cell(row=r_pass, column=8, value="考核金额：").font = BOLD
+    ws.cell(row=r_pass, column=8).alignment = RIGHT
     ws.cell(row=r_pass, column=10, value=f"=J{r_coef}*J{r_sum}").number_format = "0.00"
-    ws.cell(row=r_pass + 1, column=1, value=NOTE_TEXT)
+    ws.cell(row=r_pass, column=10).alignment = RIGHT
+    note = ws.cell(row=r_pass + 1, column=1, value=NOTE_TEXT)
+    note.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     for k, (dept, label) in enumerate(SIGN_ROWS):
         rr = r_pass + 3 + k
         ws.cell(row=rr, column=1, value=dept).font = BOLD
-        ws.cell(row=rr, column=2, value=label)
-        ws.cell(row=rr, column=7, value="签字：")
-        ws.cell(row=rr, column=9, value="日期：")
+        ws.cell(row=rr, column=1).alignment = CENTER
+        ws.cell(row=rr, column=2, value=label).alignment = CENTER
+        ws.cell(row=rr, column=7, value="签字：").alignment = CENTER
+        ws.cell(row=rr, column=9, value="日期：").alignment = CENTER
 
 
 def _quarterly_sheet(wb: Workbook, data: ReportData) -> None:
