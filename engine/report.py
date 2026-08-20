@@ -300,9 +300,26 @@ def write_report(out_dir: str, data: ReportData) -> tuple[str, str]:
 
 
 def write_supplier_workbook(path, data: ReportData, s: SupplierResult) -> str:
-    """单供应商工作簿（PDF 转换的中间产物）。"""
+    """单供应商工作簿（PDF 转换的中间产物）。
+
+    与 xlsx 报告的差异（用户拍板 2026-08-20）：
+    ① 备注列的「按交货比例分摊」在 PDF 里不出现；
+    ② 页面设为横向 + 宽度适配一页（竖版 A4 会把右侧列截掉）。
+    """
+    from openpyxl.worksheet.properties import PageSetupProperties
     wb = Workbook()
     wb.remove(wb.active)
     _supplier_sheet(wb, set(), data, s)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=5):        # ① 抹掉分摊备注
+        if row[10].value == "按交货比例分摊":
+            row[10].value = None
+    ws.page_setup.orientation = "landscape"    # ② 横向 + 缩放适配页宽
+    ws.page_setup.paperSize = 9                # A4
+    # LibreOffice 对 fitToWidth 支持不稳定 → 用固定缩放：
+    # 全表 11 列约 14.7in 宽，A4 横向可用约 10.9in → 72% 恰好放下
+    ws.page_setup.scale = 72
+    ws.page_margins.left = ws.page_margins.right = 0.4
+    ws.page_margins.top = ws.page_margins.bottom = 0.5
     wb.save(path)
     return str(path)
