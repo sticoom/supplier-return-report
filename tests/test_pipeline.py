@@ -76,9 +76,9 @@ def test_run_month_golden_numbers(tmp_path):
     assert jia["deduction"] == 280.0 and jia["coefficient"] == 0.2
     assert jia["undertaken"] == 56 and jia["under_200"] == 0
     yi = rows[YI]
-    assert yi["deduction"] == 15.0 and yi["undertaken"] == 15 and yi["under_200"] == 1
+    assert yi["deduction"] == 30.0 and yi["undertaken"] == 30 and yi["under_200"] == 1
     bing = rows[BING]
-    assert bing["deduction"] == 20.0 and bing["undertaken"] == 20
+    assert bing["deduction"] == 40.0 and bing["undertaken"] == 40
     assert bing["agreement"] == "未匹配协议"
 
 
@@ -95,7 +95,7 @@ def test_run_month_report_data_contents(tmp_path):
     assert (jia_lines[0].qty_defective, jia_lines[0].qty_missing_parts) == (3.0, 1.0)
     assert jia_lines[0].rate == 0.04 and jia_lines[0].amount == 280.0
     yi_line = [s for s in data.low200 if s.supplier == YI][0].skus[0]
-    assert yi_line.qty_quality_unacceptable == 0.5 and yi_line.amount == 15.0
+    assert yi_line.qty_quality_unacceptable == 1 and yi_line.amount == 30.0   # ceil 分摊
     assert yi_line.note == "按交货比例分摊"
     # 复核清单
     assert {r.order_id for r in data.review} == {"A1", "A4"}
@@ -114,7 +114,7 @@ def test_quarter_rows_detail_and_subtotal(tmp_path):
     details = [r for r in q if not r.is_subtotal]
     subs = {r.supplier: r for r in q if r.is_subtotal}
     assert {(r.month, r.supplier) for r in details} == {("2026-07", YI), ("2026-07", BING)}
-    assert subs[YI].deduction == 15.0 and subs[BING].undertaken == 20
+    assert subs[YI].deduction == 30.0 and subs[BING].undertaken == 40
 
 
 def test_rerun_same_month_replaces_not_accumulates(tmp_path):

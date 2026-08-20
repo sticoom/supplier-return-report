@@ -58,7 +58,8 @@ def test_supplier_sheet_layout_matches_manual_template(tmp_path):
     assert ws["G4"].value.startswith("QUALITY_UNACCEPTABLE")
     # 数据行
     assert ws["B5"].value == "SKU001" and ws["J5"].value == 280.0
-    assert ws["J5"].number_format == "General" and ws["H5"].number_format == "0.00%"
+    assert ws["J5"].number_format == "0.00" and ws["H5"].number_format == "0.00%"
+    assert ws["C5"].number_format == "0"                      # 数量列整数
     assert ws["H5"].value == "=SUM(G5+F5+E5)/C5"      # 质量退货率为 Excel 公式
     # 统计/系数/考核金额
     assert ws.cell(row=6, column=1).value == "统计金额："
@@ -114,7 +115,7 @@ def test_batch_matrix_sheet_layout(tmp_path):
     assert ws["A3"].value == "东莞市甲五金制品有限公司"
     assert (ws["B3"].value, ws["C3"].value, ws["D3"].value) == (8, 0, 1.0)
     assert (ws["E3"].value, ws["F3"].value, ws["G3"].value) == (20, 1, 19 / 20)
-    assert ws["D3"].number_format == "0.0000%" and ws["G3"].number_format == "0.0000%"
+    assert ws["D3"].number_format == "0.0%" and ws["G3"].number_format == "0.0%"
     assert ws["A4"].value == "台州乙塑料制品有限公司"
     assert ws["B4"].value is None                                   # 6 月无验货 → 留空
     assert (ws["E4"].value, ws["F4"].value, ws["G4"].value) == (10, 0, 1.0)

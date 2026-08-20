@@ -92,8 +92,9 @@ def _summary_sheet(wb: Workbook, data: ReportData, only_low200: bool) -> None:
             c.border = THIN
         ws.cell(row=i, column=3).number_format = "0.00"
         if s.pass_rate is not None:
-            ws.cell(row=i, column=4).number_format = "0.0000%"
+            ws.cell(row=i, column=4).number_format = "0.0%"
         ws.cell(row=i, column=6).number_format = "0.##"
+        ws.cell(row=i, column=7).number_format = "0.00"
     ws.column_dimensions["B"].width = 34
 
 
@@ -149,9 +150,13 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
         vals = [i, ln.sku, ln.sales_qty, ln.return_qty, ln.qty_defective,
                 ln.qty_missing_parts, ln.qty_quality_unacceptable,
                 f"=SUM(G{r}+F{r}+E{r})/C{r}", ln.unit_price, ln.amount, ln.note or None]
+        def _fmt(j):
+            return ("0" if j in (3, 4, 5, 6, 7)
+                    else "0.00%" if j == 8
+                    else "0.00" if j in (9, 10)
+                    else "0_ " if j == 11 else None)
         for j, v in enumerate(vals, start=1):
-            _cell(r, j, v, F_DATA, CENTER,
-                  "0.00%" if j == 8 else ("0_ " if j == 11 else None))
+            _cell(r, j, v, F_DATA, CENTER, _fmt(j))
         r += 1
     last = r - 1 if r > 5 else 5
 
@@ -175,7 +180,7 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
     _cell(r_pass, 1, "当月检验合格率：", F_LABEL, CENTER)
     ws.merge_cells(f"E{r_pass}:F{r_pass}")
     _cell(r_pass, 5, "/" if s.pass_rate is None else s.pass_rate,
-          F_DATA, CENTER, "0.00%")
+          F_DATA, CENTER, "0.0%")
     ws.merge_cells(f"G{r_pass}:I{r_pass}")
     _cell(r_pass, 7, "考核金额：", F_LABEL, RIGHT)
     _cell(r_pass, 10, f"=J{r_coef}*J{r_sum}", F_DATA, CENTER, "0.00_ ")
@@ -209,6 +214,7 @@ def _quarterly_sheet(wb: Workbook, data: ReportData) -> None:
             if row.is_subtotal:
                 c.font = BOLD
         q.cell(row=i, column=3).number_format = "0.00"
+        q.cell(row=i, column=4).number_format = "0.00"
 
 
 def _review_sheet(wb: Workbook, data: ReportData) -> None:
@@ -243,7 +249,7 @@ def _batch_matrix_sheet(wb: Workbook, data: ReportData) -> None:
             for k, v in enumerate((total, failed, (total - failed) / total)):
                 cc = bm.cell(row=i, column=2 + j * 3 + k, value=v)
                 cc.border = THIN
-            bm.cell(row=i, column=2 + j * 3 + 2).number_format = "0.0000%"
+            bm.cell(row=i, column=2 + j * 3 + 2).number_format = "0.0%"
     if months:
         bm.cell(row=len(data.batch_matrix) + 4, column=1,
                 value="备注：从验货原始数据计算，批次合格率＝合格批数÷总批数（供应商全名）。")

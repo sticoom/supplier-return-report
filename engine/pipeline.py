@@ -141,7 +141,9 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
             continue
         # 规则13：按交货数量占比分摊给所有交过货的供应商，单价取最近一次入库含税价
         multi = len(shares) > 1
-        plan = [(sup, {k: v * share for k, v in q.items()},
+        import math
+        plan = [(sup, {k: (math.ceil(v * share) if v * share != int(v * share) else int(v * share))
+                       for k, v in q.items()},
                  rules.latest_price(inbound_rows, sku, sup, report_month),
                  "按交货比例分摊" if multi else "") for sup, share in shares.items()]
         for sup, qq, price, note in plan:

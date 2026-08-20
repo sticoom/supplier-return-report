@@ -218,10 +218,10 @@ def test_sample_3_second_supplier_split_rows(cli_run):
     yi = _sku_rows(_supplier_sheet(cli_run, YI))[0]
     bing = _sku_rows(_supplier_sheet(cli_run, BING))[0]
     assert yi["note"] == bing["note"] == "按交货比例分摊"
-    assert yi["qty_qu"] == 0.5 and bing["qty_qu"] == 0.5     # 比例分摊 → 小数件数保留
-    assert abs((yi["qty_qu"] + bing["qty_qu"]) - 1.0) < 1e-9  # 拆分守恒 = 订单原始 1 件
+    assert yi["qty_qu"] == 1 and bing["qty_qu"] == 1         # 分摊往上取整（用户拍板）
+    assert yi["qty_qu"] + bing["qty_qu"] == 2                # 两家各 ceil(0.5)=1（不再守恒，向上取整）
     assert yi["price"] == 30.0 and bing["price"] == 40.0      # 二供各自取各自的价
-    assert abs(yi["amount"] - 15.0) < 1e-9 and abs(bing["amount"] - 20.0) < 1e-9
+    assert abs(yi["amount"] - 30.0) < 1e-9 and abs(bing["amount"] - 40.0) < 1e-9
 
 
 # ---------- 第 2 层：真实数据 E2E（marker=integration，默认 deselect） ----------

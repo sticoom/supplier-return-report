@@ -95,7 +95,7 @@ def test_full_flow_generate_download_history_quarter(client, tmp_path):
     assert {(row["month"], row["supplier"]) for row in q if not row["is_subtotal"]} \
         == {(MONTH, YI), (MONTH, BING)}
     subs = {row["supplier"]: row for row in q if row["is_subtotal"]}
-    assert subs[YI]["deduction"] == 15.0 and subs[BING]["undertaken"] == 20
+    assert subs[YI]["deduction"] == 30.0 and subs[BING]["undertaken"] == 40
 
     # 未生成的月下载 → 404
     assert client.get("/api/download/2026-08").status_code == 404
