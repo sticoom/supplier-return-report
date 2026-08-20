@@ -276,7 +276,9 @@ async function loadHistory() {
   $("histTable").querySelector("tbody").innerHTML = rows.map(h =>
     `<tr><td><a class="dl" href="#" data-month="${h.month}">${h.month}</a></td>
      <td>${h.supplier_count}</td><td>${h.low200_count}</td>
-     <td><a class="dl" href="api/download/${h.month}">下载</a></td></tr>`).join("")
+     <td><a class="dl" href="api/download/${h.month}?file=main">主报告</a>
+         <a class="dl" href="api/download/${h.month}?file=low">低于200</a>
+         <a class="dl" href="api/download/${h.month}?file=pdf">PDF</a></td></tr>`).join("")
     || `<tr><td colspan="4" class="muted">暂无历史记录</td></tr>`;
 }
 $("btnHist").addEventListener("click", loadHistory);

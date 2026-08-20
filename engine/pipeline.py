@@ -254,7 +254,8 @@ def generate_supplier_pdfs(out_dir: str, data: ReportData) -> tuple[str, int]:
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
     if not soffice:
         raise RuntimeError("未找到 soffice/libreoffice（服务器需安装 libreoffice-calc）")
-    suppliers = sorted(data.suppliers + data.low200, key=lambda s: s.supplier)
+    # 用户拍板 2026-08-20：PDF 只给 ≥200 的正式结算供应商生成（低于200 不出 PDF）
+    suppliers = sorted(data.suppliers, key=lambda s: s.supplier)
     made: list[Path] = []
     with tempfile.TemporaryDirectory() as td:
         for s in suppliers:
