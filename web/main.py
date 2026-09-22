@@ -189,8 +189,11 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
                 lack.append("《供应商框架合同、质量协议及廉洁协议签订记录表》")
             raise HTTPException(400,
                                  f"参考数据缺少：{'、'.join(lack)}，请先在「上传参考数据文件」处上传")
-        summary = run_month(month, paths["fba"], paths["fbm"], paths["dlm"], paths["inbound"],
-                            ref, str(reports_dir), store=store, pdf=True)
+        try:
+            summary = run_month(month, paths["fba"], paths["fbm"], paths["dlm"], paths["inbound"],
+                                ref, str(reports_dir), store=store, pdf=True)
+        except ValueError as e:            # 输入文件问题（如 FBA 明细 0 行）→ 400 可读原因
+            raise HTTPException(400, str(e)) from e
         return asdict(summary)
 
     @app.get("/api/download/{month}")

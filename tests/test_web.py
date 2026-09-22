@@ -1,7 +1,7 @@
 """T6：web/main.py create_app 工厂 —— TestClient 走通上传→参考→生成→下载全流程。"""
 from __future__ import annotations
 
-from conftest import (BING, INBOUND_NAME, JIA, MONTH, YI, make_monthly_files,
+from conftest import (BING, FBA_NAME, INBOUND_NAME, JIA, MONTH, YI, make_monthly_files,
                       make_reference_files, post_files)
 
 
@@ -123,3 +123,22 @@ def test_generate_blocked_when_reference_empty(client, tmp_path):
     detail = r.json()["detail"]
     text = detail if isinstance(detail, str) else str(detail)
     assert "验货" in text and "协议" in text
+
+
+def test_generate_rejects_empty_fba_detail_with_400(client, tmp_path):
+    """防线：FBA 上传成透视表（0 行明细）→ 生成接口 400 + 可读原因，不是 500/空报告。"""
+    import openpyxl
+    monthly = make_monthly_files(tmp_path / "up")
+    p = tmp_path / "up" / "fba_pivot.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet2"
+    ws.append(["类型:退货原因", "退货原因"])
+    ws.append(["退货订单", "UNWANTED_ITEM(不想要的商品)"])
+    wb.save(p)
+    monthly[FBA_NAME] = str(p)
+    assert post_files(client, "/api/upload", monthly, month=MONTH).status_code == 200
+    assert post_files(client, "/api/reference", make_reference_files(tmp_path / "ref")).status_code == 200
+    r = client.post("/api/generate", json={"month": MONTH})
+    assert r.status_code == 400
+    assert "FBA" in r.json()["detail"]

@@ -62,14 +62,25 @@ def _ret_order(rec, sku_col, comment_col) -> ReturnOrderRow:
     )
 
 
+def _ret_rows(path, sku_col, comment_col) -> list[ReturnOrderRow]:
+    """明细页按必需列定位，不按位置取：领星导出的 sheet 顺序不固定，
+    透视小表（如「退货原因」汇总）可能排在第一个 sheet（2026-08 真实事故）。"""
+    out = []
+    xls = pd.ExcelFile(path)
+    for sn in xls.sheet_names:
+        df = pd.read_excel(xls, sheet_name=sn, dtype=object)
+        if not {"订单号", "退货数量", "退货原因", sku_col}.issubset(df.columns):
+            continue
+        out += [_ret_order(r, sku_col, comment_col) for r in df.to_dict("records")]
+    return [r for r in out if r.order_id or r.sku]
+
+
 def load_fba(path) -> list[ReturnOrderRow]:
-    rows = [_ret_order(r, "sku", "买家备注") for r in _rows(path)]
-    return [r for r in rows if r.order_id or r.sku]
+    return _ret_rows(path, "sku", "买家备注")
 
 
 def load_fbm(path) -> list[ReturnOrderRow]:
-    rows = [_ret_order(r, "SKU", "备注") for r in _rows(path)]
-    return [r for r in rows if r.order_id or r.sku]
+    return _ret_rows(path, "SKU", "备注")
 
 
 def _flatten_two_level(cols) -> list[str]:

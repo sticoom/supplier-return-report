@@ -213,9 +213,15 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
 def run_month(report_month, fba_path, fbm_path, dlm_path, inbound_path,
               ref: ReferenceData, out_dir: str, store: Store | None = None,
               pdf: bool = False) -> RunSummary:
+    fba_rows = loaders.load_fba(fba_path)
+    fbm_rows = loaders.load_fbm(fbm_path)
+    if not fba_rows:          # 防线：FBA 明细 0 行必是导出问题，静默出空报告比报错更糟（2026-08 事故）
+        raise ValueError(
+            "《退货(FBA)订单导出》解析到 0 行明细：请确认上传的是领星退货订单明细导出"
+            "（应含 订单号/退货原因/退货数量 列），重新导出后再生成")
     data = build_report_data(
         report_month,
-        loaders.load_fba(fba_path), loaders.load_fbm(fbm_path), loaders.load_dlm(dlm_path),
+        fba_rows, fbm_rows, loaders.load_dlm(dlm_path),
         loaders.load_inbound(inbound_path), ref)
     if store is not None:
         store.upsert_month(report_month, data.suppliers + data.low200)

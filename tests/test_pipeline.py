@@ -175,3 +175,22 @@ def test_no_receipt_sku_dropped_entirely(tmp_path):
     all_cells = " ".join(str(c.value) for sh in wb.worksheets
                          for row in sh.iter_rows() for c in row if c.value)
     assert "SKU004" not in all_cells          # 彻底不出现
+
+
+def test_run_month_rejects_empty_fba_detail(tmp_path):
+    """防线（2026-08 真实事故）：FBA 明细读到 0 行 → 报错提示重新导出，不得静默出空报告。"""
+    import openpyxl
+    import pytest
+    p = tmp_path / "fba_pivot.xlsx"          # 第一个 sheet 是透视小表、无明细页
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet2"
+    ws.append(["类型:退货原因", "退货原因"])
+    ws.append(["退货订单", "UNWANTED_ITEM(不想要的商品)"])
+    wb.save(p)
+    fba, fbm, dlm, inbound = _golden_inputs(tmp_path)
+    ref = _golden_reference(tmp_path)
+    store = pipeline.Store(str(tmp_path / "guard.db"))
+    with pytest.raises(ValueError, match="FBA"):
+        pipeline.run_month("2026-07", p, fbm, dlm, inbound, ref,
+                           str(tmp_path / "reports3"), store=store)

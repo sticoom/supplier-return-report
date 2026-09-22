@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from fixtures_build import (make_agreements_csv, make_agreements_xlsx, make_dlm_file, make_inbound_file_with_tax,
+import openpyxl
+from fixtures_build import (FBA_HEADER, FBM_HEADER, _patch, make_agreements_csv,
+                            make_agreements_xlsx, make_dlm_file, make_inbound_file_with_tax,
                             make_fba_file, make_fbm_file, make_inbound_file,
                             make_inspection_file)
 
@@ -99,3 +101,39 @@ def test_load_inbound_prefers_tax_included_price(tmp_path):
         ("2026-06-01", "甲", "S1", 10, 19.87, 22.45)])
     rows = loaders.load_inbound(f)
     assert rows[0].unit_price == 22.45
+
+
+def test_load_fba_picks_detail_sheet_when_pivot_sheet_is_first(tmp_path):
+    """真实事故（2026-08）：领星导出把「退货原因」透视小表排在第一个 sheet，
+    明细在后面的 sheet1。loader 必须按必需列定位明细页，不能按位置取第一个 sheet。"""
+    p = tmp_path / "fba.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet2"
+    ws.append(["类型:退货原因", "退货原因"])
+    ws.append(["退货订单", "UNWANTED_ITEM(不想要的商品)"])
+    ws.append(["退货订单", "DEFECTIVE(存在瑕疵)"])
+    ws2 = wb.create_sheet("sheet1")
+    ws2.append(FBA_HEADER)
+    ws2.append(_patch(FBA_HEADER, ("订单号", "sku", "退货数量", "退货原因", "退货时间", "买家备注"),
+                      ("A1", "SKU001", 2, "DEFECTIVE(存在瑕疵)", "2026-08-05", "破了")))
+    wb.save(p)
+    rows = loaders.load_fba(p)
+    assert len(rows) == 1 and rows[0].sku == "SKU001" and rows[0].qty == 2
+
+
+def test_load_fbm_picks_detail_sheet_when_pivot_sheet_is_first(tmp_path):
+    """同 load_fba：FBM 也不得依赖 sheet 顺序。"""
+    p = tmp_path / "fbm.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet2"
+    ws.append(["类型:退货原因", "退货原因"])
+    ws.append(["退货订单", "CR-DEFECTIVE(存在瑕疵)"])
+    ws2 = wb.create_sheet("sheet1")
+    ws2.append(FBM_HEADER)
+    ws2.append(_patch(FBM_HEADER, ("订单号", "SKU", "退货数量", "退货原因", "退货时间", "备注"),
+                      ("B1", "SKU001", 1, "CR-DEFECTIVE(存在瑕疵)", "2026-08-08", "缺件")))
+    wb.save(p)
+    rows = loaders.load_fbm(p)
+    assert len(rows) == 1 and rows[0].sku == "SKU001"
