@@ -72,9 +72,18 @@ def test_supplier_sheet_layout_matches_manual_template(tmp_path):
     assert ws.cell(row=8, column=10).value == "=J7*J6"
     # 备注与签字栏
     assert str(ws.cell(row=9, column=1).value).startswith("备注：数据来源于领星系统")
+    assert str(ws.cell(row=9, column=1).value).endswith("V3中第5.2.3条款。")
     assert ws.cell(row=10, column=1).value == "采购部"   # 紧接备注行（枫悦版式无空行）
     assert ws.cell(row=13, column=1).value == "总经理"
     assert ws.cell(row=13, column=2).value == "最终意见："
+    # 汇总区/签字栏合并区与签字占位文字（对齐人工模板 2026-10-08）
+    merged = [str(r) for r in ws.merged_cells.ranges]
+    for rng in ("A6:I6", "A7:D7", "E7:F7", "G7:I7", "A8:D8", "E8:F8", "G8:I8",
+                "A9:K9", "C10:K10", "C13:K13"):
+        assert rng in merged, rng
+    for rr in range(10, 14):
+        sign = ws.cell(row=rr, column=3).value
+        assert sign.startswith(" " * 52 + "签字：") and sign.endswith("签字：" + " " * 36 + "日期：")
 
 
 def test_summary_low200_quarterly_review_validation_sheets(tmp_path):

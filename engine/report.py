@@ -32,9 +32,11 @@ SUMMARY_HEADER = ["序号", "供应商", "应扣金额", "批次合格率", "是
 REASON_SUBS = ["DEFECTIVE \n(存在瑕疵)", "MISSING_PARTS\n (部分零件缺失)",
                "QUALITY_UNACCEPTABLE\n (质量未达到期望)"]
 NOTE_TEXT = ("备注：数据来源于领星系统，亚马逊后台数据；如对数据有疑问，请及时联系德拉姆品质部。\n"
-             "考核依据：依据《质量保证协议》中质量退货金额条款。")
+             "考核依据：依据《质量保证协议》V3中第5.2.3条款。")
 SIGN_ROWS = [("采购部", "审核及优化意见简述："), ("品质部", "审核及优化意见简述："),
              ("供应链中心", "审核及优化意见简述："), ("总经理", "最终意见：")]
+# 签字栏占位文字（52/36 空格定位「签字：」「日期：」，与人工模板逐字一致）
+SIGN_BLANK = " " * 52 + "签字：" + " " * 36 + "日期："
 
 
 def short_name(supplier: str) -> str:
@@ -118,8 +120,8 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
                 ws.cell(row=rr, column=cc).border = THIN
 
     # 列宽 / 行高（参考枫悦 sheet 实测值）
-    for col, w in {"A": 13.7, "B": 23.7, "C": 15.6, "D": 12.1, "E": 15.6, "F": 18.8,
-                   "G": 28.5, "H": 12.8, "I": 15.2, "J": 14.0, "K": 17.6}.items():
+    for col, w in {"A": 13.67, "B": 23.69, "C": 15.56, "D": 12.11, "E": 15.56, "F": 18.51,
+                   "G": 28.52, "H": 12.78, "I": 15.25, "J": 14.0, "K": 17.56}.items():
         ws.column_dimensions[col].width = w
 
     # 标题 + 供应商名称（各占一整行合并）
@@ -196,7 +198,8 @@ def _supplier_sheet(wb: Workbook, used: set[str], data: ReportData,
         _cell(rr, 1, dept, F_DATA, CENTER)
         _cell(rr, 2, label, F_DATA, CENTER)
         ws.merge_cells(f"C{rr}:K{rr}")
-        _cell(rr, 3, " " * 42, F_DATA, CENTER)
+        # 垂直对齐留默认（与人工模板一致）；文字用空格定位签字/日期落点
+        _cell(rr, 3, SIGN_BLANK, F_DATA, Alignment(horizontal="center"))
         ws.row_dimensions[rr].height = 46
     # 边框最后统一写：合并之后给每个格子（含 MergedCell）赋边框，
     # openpyxl 会把样式写进 XML（Excel 正常显示；openpyxl 读回时不显示是读取端特性）
