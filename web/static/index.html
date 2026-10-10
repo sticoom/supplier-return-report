@@ -62,11 +62,11 @@
 </section>
 
 <section>
-  <h2>2. 上传每月数据文件（4 个，必传）</h2>
+  <h2>2. 上传每月数据文件（FBA / DLM / 入库单必传，FBM 可选）</h2>
   <div class="slot"><span class="slot-name">《退货(FBA)订单导出》.xlsx</span>
     <label class="pick">选择文件<input type="file" id="fileFBA" accept=".xlsx" hidden></label>
     <span class="picked" id="nameFBA"></span></div>
-  <div class="slot"><span class="slot-name">《退货(FBM)订单导出》.xlsx</span>
+  <div class="slot"><span class="slot-name">《退货(FBM)订单导出》.xlsx <span class="muted">（可选，不传则只统计 FBA）</span></span>
     <label class="pick">选择文件<input type="file" id="fileFBM" accept=".xlsx" hidden></label>
     <span class="picked" id="nameFBM"></span></div>
   <div class="slot"><span class="slot-name">《DLM退货统计SKU导出》.xlsx</span>
@@ -159,15 +159,16 @@ for (const [key] of SLOTS) {
 function picked(key) { return $("file" + key).files[0] || null; }
 function pickMonth() { return monthInput.value; }
 
-/* ---- 上传每月数据文件（4 个必传） ---- */
+/* ---- 上传每月数据文件（FBA/DLM/入库单必传，FBM 可选：业务量趋零，2026-10 起） ---- */
 $("btnUpload").addEventListener("click", async () => {
   const month = pickMonth();
   if (!month) return toast("请先选择报告月", true);
-  const lack = SLOTS.slice(0, 4).filter(([k]) => !picked(k)).map(([,n]) => `《${n}》`);
+  const monthly = SLOTS.slice(0, 4);
+  const lack = monthly.filter(([k]) => k !== "FBM" && !picked(k)).map(([,n]) => `《${n}》`);
   if (lack.length) return toast(`还有文件未选择：${lack.join("、")}`, true);
   const fd = new FormData();
   fd.append("month", month);
-  SLOTS.slice(0, 4).forEach(([k]) => { const f = picked(k); fd.append("files", f, f.name); });
+  monthly.forEach(([k]) => { const f = picked(k); if (f) fd.append("files", f, f.name); });
   $("btnUpload").disabled = true; $("uploadState").textContent = "上传中…";
   try {
     const r = await fetch("api/upload", { method: "POST", body: fd });

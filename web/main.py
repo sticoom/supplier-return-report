@@ -174,7 +174,8 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
         for kind in ("fba", "fbm", "dlm", "inbound"):
             p = latest_upload_path(store, uploads_dir, month, kind)
             if p is None:
-                missing.append(kind)
+                if kind != "fbm":   # FBM 可选（2026-10：业务量趋零，不传只统计 FBA）
+                    missing.append(kind)
             else:
                 paths[kind] = str(p)
         if missing:
@@ -190,7 +191,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
             raise HTTPException(400,
                                  f"参考数据缺少：{'、'.join(lack)}，请先在「上传参考数据文件」处上传")
         try:
-            summary = run_month(month, paths["fba"], paths["fbm"], paths["dlm"], paths["inbound"],
+            summary = run_month(month, paths["fba"], paths.get("fbm"), paths["dlm"], paths["inbound"],
                                 ref, str(reports_dir), store=store, pdf=True)
         except ValueError as e:            # 输入文件问题（如 FBA 明细 0 行）→ 400 可读原因
             raise HTTPException(400, str(e)) from e

@@ -108,6 +108,23 @@ def test_run_month_report_data_contents(tmp_path):
     assert data.batch_matrix[BING]["2026-07"] == (5, 2)
 
 
+def test_run_month_without_fbm(tmp_path):
+    """FBM 可选（2026-10）：不传照常出报告，校验页留痕且不误报口径差异。"""
+    fba, fbm, dlm, inbound = _golden_inputs(tmp_path)
+    ref = _golden_reference(tmp_path)
+    store = pipeline.Store(str(tmp_path / "app.db"))
+    summary = pipeline.run_month("2026-07", fba, None, dlm, inbound, ref,
+                                 str(tmp_path / "reports"), store=store)
+    assert (tmp_path / "reports" / summary.file_name).exists()
+    assert len(store.month_suppliers("2026-07")) == 3
+    from engine import loaders
+    data = pipeline.build_report_data(
+        "2026-07", loaders.load_fba(fba), [], loaders.load_dlm(dlm),
+        loaders.load_inbound(inbound), ref, fbm_uploaded=False)
+    kinds = {v.kind for v in data.validation}
+    assert "FBM未上传" in kinds and "口径差异" not in kinds
+
+
 def test_quarter_rows_detail_and_subtotal(tmp_path):
     _, store = _run(tmp_path)
     q = store.quarter_rows("2026-07")

@@ -99,7 +99,7 @@ def _ensure_count_column(con) -> None:
 
 
 def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
-                      ref: ReferenceData) -> ReportData:
+                      ref: ReferenceData, fbm_uploaded: bool = True) -> ReportData:
     pivot = rules.pivot_quality(fba_rows, fbm_rows)
     dlm_agg = rules.aggregate_dlm(dlm_rows)
     validation: list[ValidationItem] = []
@@ -182,15 +182,21 @@ def build_report_data(report_month, fba_rows, fbm_rows, dlm_rows, inbound_rows,
                                      row.buyer_comment, row.return_time,
                                      agg.default_supplier if agg else "未匹配DLM"))
 
-    # 口径差异校验：领星全原因退货合计 vs DLM 退货量合计，差异率>5% 提示
-    total_platform = sum(r.qty for r in fba_rows) + sum(r.qty for r in fbm_rows)
-    total_dlm = round(sum(a.return_qty for a in dlm_agg.values()), 2)
-    base = max(total_platform, total_dlm)
-    if base > 0 and abs(total_platform - total_dlm) / base > 0.05:
+    # 口径差异校验：领星全原因退货合计 vs DLM 退货量合计，差异率>5% 提示。
+    # FBM 未上传（2026-10 起可选，业务量趋零）时平台侧只剩 FBA，与 DLM 口径天然
+    # 对不上 → 跳过该校验，只在校验页留痕说明本月未计入 FBM
+    if not fbm_uploaded:
         validation.append(ValidationItem(
-            "口径差异",
-            f"领星全原因退货合计 {total_platform} vs DLM 退货量合计 {total_dlm}，"
-            f"差异率 {abs(total_platform - total_dlm) / base:.1%}，请检查导出期间是否一致"))
+            "FBM未上传", "本月未上传《退货(FBM)订单导出》，报告仅统计 FBA 退货"))
+    else:
+        total_platform = sum(r.qty for r in fba_rows) + sum(r.qty for r in fbm_rows)
+        total_dlm = round(sum(a.return_qty for a in dlm_agg.values()), 2)
+        base = max(total_platform, total_dlm)
+        if base > 0 and abs(total_platform - total_dlm) / base > 0.05:
+            validation.append(ValidationItem(
+                "口径差异",
+                f"领星全原因退货合计 {total_platform} vs DLM 退货量合计 {total_dlm}，"
+                f"差异率 {abs(total_platform - total_dlm) / base:.1%}，请检查导出期间是否一致"))
 
     data = ReportData(report_month)
     data.suppliers = sorted([r for r in results if not r.under_200],
@@ -214,7 +220,8 @@ def run_month(report_month, fba_path, fbm_path, dlm_path, inbound_path,
               ref: ReferenceData, out_dir: str, store: Store | None = None,
               pdf: bool = False) -> RunSummary:
     fba_rows = loaders.load_fba(fba_path)
-    fbm_rows = loaders.load_fbm(fbm_path)
+    # FBM 可选（2026-10：业务量趋零）：fbm_path 为空则只统计 FBA，校验页留痕
+    fbm_rows = loaders.load_fbm(fbm_path) if fbm_path else []
     if not fba_rows:          # 防线：FBA 明细 0 行必是导出问题，静默出空报告比报错更糟（2026-08 事故）
         raise ValueError(
             "《退货(FBA)订单导出》解析到 0 行明细：请确认上传的是领星退货订单明细导出"
@@ -222,7 +229,7 @@ def run_month(report_month, fba_path, fbm_path, dlm_path, inbound_path,
     data = build_report_data(
         report_month,
         fba_rows, fbm_rows, loaders.load_dlm(dlm_path),
-        loaders.load_inbound(inbound_path), ref)
+        loaders.load_inbound(inbound_path), ref, fbm_uploaded=fbm_path is not None)
     if store is not None:
         store.upsert_month(report_month, data.suppliers + data.low200)
         data.quarterly = store.quarter_rows(report_month)   # 历史+本月合成
@@ -287,7 +294,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="供应商质量退货月度报告 CLI")
     ap.add_argument("--month", required=True)
     ap.add_argument("--fba", required=True)
-    ap.add_argument("--fbm", required=True)
+    ap.add_argument("--fbm")                # 可选（2026-10：业务量趋零，不传只统计 FBA）
     ap.add_argument("--dlm", required=True)
     ap.add_argument("--inbound", required=True)
     ap.add_argument("--inspection")

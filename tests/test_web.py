@@ -1,8 +1,8 @@
 """T6：web/main.py create_app 工厂 —— TestClient 走通上传→参考→生成→下载全流程。"""
 from __future__ import annotations
 
-from conftest import (BING, FBA_NAME, INBOUND_NAME, JIA, MONTH, YI, make_monthly_files,
-                      make_reference_files, post_files)
+from conftest import (BING, FBA_NAME, FBM_NAME, INBOUND_NAME, JIA, MONTH, YI,
+                      make_monthly_files, make_reference_files, post_files)
 
 
 def test_index_and_upload_by_filename(client, tmp_path):
@@ -58,9 +58,9 @@ def test_reference_update_effective_immediately(client, tmp_path):
 
 
 def test_full_flow_generate_download_history_quarter(client, tmp_path):
-    # 缺文件先生成 → 400 且指出缺哪些
+    # 缺文件先生成 → 400 且指出缺哪些（FBM 可选，2026-10 起不算缺失）
     r = client.post("/api/generate", json={"month": MONTH})
-    assert r.status_code == 400 and set(r.json()["detail"]["missing"]) == {"fba", "fbm", "dlm", "inbound"}
+    assert r.status_code == 400 and set(r.json()["detail"]["missing"]) == {"fba", "dlm", "inbound"}
 
     # 上传→参考→生成 全流程
     assert post_files(client, "/api/upload", make_monthly_files(tmp_path / "up"), month=MONTH).status_code == 200
@@ -112,6 +112,17 @@ def test_upload_accepts_reference_files_too(client, tmp_path):
     assert {"fba", "fbm", "dlm", "inbound"} <= kinds
     assert "inspection" in kinds and "agreements" in kinds
     assert body["inspections"] > 0 and body["agreements"] > 0
+
+
+def test_generate_without_fbm_succeeds(client, tmp_path):
+    """FBM 可选（2026-10）：只传 FBA/DLM/入库单 + 参考 → 生成 200，供应商数不变。"""
+    monthly = make_monthly_files(tmp_path / "up")
+    monthly = {k: v for k, v in monthly.items() if k != FBM_NAME}
+    assert post_files(client, "/api/upload", monthly, month=MONTH).status_code == 200
+    assert post_files(client, "/api/reference", make_reference_files(tmp_path / "ref")).status_code == 200
+    r = client.post("/api/generate", json={"month": MONTH})
+    assert r.status_code == 200
+    assert r.json()["supplier_count"] == 3
 
 
 def test_generate_blocked_when_reference_empty(client, tmp_path):
